@@ -539,6 +539,9 @@
                                         <MenuItem Header="Freeze at value…"
                                                   Command="{Binding DataContext.FreezeAtValueCommand}"
                                                   CommandParameter="{Binding SelectedItems}" />
+                                        <MenuItem Header="Find a stable address…" Click="OnFindPointerPath"
+                                                  ToolTip="Trace a route that still finds this value after a restart" />
+                                        <Separator />
                                         <MenuItem Header="Name this cheat…"
                                                   Command="{Binding DataContext.GroupSelectedCommand}"
                                                   CommandParameter="{Binding SelectedItems}" />

@@ -1,0 +1,131 @@
+<Window x:Class="Cheatmaster.App.Views.PointerScanWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Find a stable address"
+        Icon="/Assets/cheatmaster.ico"
+        Height="560" Width="720" MinHeight="440" MinWidth="560"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        WindowStyle="None"
+        ShowInTaskbar="False">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
+                <TextBlock Text="Find a stable address" Margin="14,0,0,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="12" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="20,16,20,0">
+                <TextBlock TextWrapping="Wrap" LineHeight="19" Foreground="{StaticResource TextMutedBrush}"
+                           Text="A value on the heap sits at a different address every time the game starts, which is why a saved address stops working. A route that begins at a fixed point inside the program and walks through pointers to the value does keep working." />
+
+                <Border Margin="0,14,0,0" Padding="12,10" Style="{StaticResource CardBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Description}" FontSize="12.5" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding TargetText}" FontSize="11" Margin="0,2,0,0"
+                                       FontFamily="{StaticResource MonoFont}"
+                                       Foreground="{StaticResource TextFaintBrush}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                            <TextBlock Text="DEPTH" Style="{StaticResource SectionLabel}" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding DepthOptions}" SelectedItem="{Binding MaxDepth}"
+                                      MinWidth="70" ToolTip="How many pointers deep to follow" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                            <TextBlock Text="STRUCTURE SIZE" Style="{StaticResource SectionLabel}" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding OffsetOptions}" SelectedItem="{Binding MaxOffset}"
+                                      MinWidth="90" ToolTip="How far into an object a field may sit" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <StackPanel Margin="0,12,0,0"
+                            Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+                    <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" />
+                </StackPanel>
+            </StackPanel>
+
+            <Border Grid.Row="2" Margin="20,14,20,0" Style="{StaticResource CardBorder}" ClipToBounds="True">
+                <Grid>
+                    <ListBox ItemsSource="{Binding Paths}" SelectedItem="{Binding Selected}" Margin="6"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Display}" FontSize="11.5"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding DepthText}" FontSize="10.5"
+                                               Margin="12,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextFaintBrush}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420"
+                                Visibility="{Binding FoundNothing, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="No route found" HorizontalAlignment="Center" FontSize="13"
+                                   Foreground="{StaticResource TextMutedBrush}" />
+                        <TextBlock Margin="0,6,0,0" TextAlignment="Center" TextWrapping="Wrap" FontSize="11.5"
+                                   Foreground="{StaticResource TextFaintBrush}"
+                                   Text="Try a greater depth, a larger structure size, or a different address from the same cheat." />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="16,12" Margin="0,14,0,0">
+                <Grid>
+                    <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{StaticResource TextFaintBrush}" TextTrimming="CharacterEllipsis"
+                               Margin="0,0,16,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0"
+                                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                        <Button Content="Search" Command="{Binding ScanCommand}" MinWidth="110" Margin="0,0,8,0" />
+                        <Button x:Name="UseButton" Content="Use this route" Click="OnUse" MinWidth="130"
+                                Style="{StaticResource PrimaryButton}"
+                                IsEnabled="{Binding HasSelection}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

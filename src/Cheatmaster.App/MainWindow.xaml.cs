@@ -165,6 +165,36 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Turns a session-only address into a route that survives a restart. Only meaningful while
+    /// the game is running, because the route has to be traced through live memory.
+    /// </summary>
+    private void OnFindPointerPath(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Process is not { } process)
+        {
+            _viewModel.Notify("Attach to the game first — a route has to be traced through its memory.", NoticeKind.Warning);
+            return;
+        }
+
+        if (CheatsGrid.SelectedItem is not CheatRow row)
+        {
+            _viewModel.Notify("Select the entry you want a stable address for.", NoticeKind.Info);
+            return;
+        }
+
+        ulong address = row.Entry.Address.Resolve(process);
+        if (address == 0 || !row.Entry.TryReadValue(process, out ulong bits))
+        {
+            _viewModel.Notify("That entry does not currently resolve to a readable address.", NoticeKind.Warning);
+            return;
+        }
+
+        var window = new PointerScanWindow(process, address, row.Description, row.Entry.Type, bits) { Owner = this };
+        if (window.ShowDialog() == true && window.Chosen is { } path)
+            _viewModel.ApplyPointerPath(row, path);
+    }
+
     private void OnSelectAllCheats(object sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
 
     private void OnCopyCheatAddress(object sender, RoutedEventArgs e)

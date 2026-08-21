@@ -1098,6 +1098,19 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             Notify($"Wrote {input} to {written} entr{(written == 1 ? "y" : "ies")}.", NoticeKind.Success);
     }
 
+    /// <summary>
+    /// Re-anchors an entry to a pointer route. The address it had was only good for this run of
+    /// the game; the route is good for every run.
+    /// </summary>
+    public void ApplyPointerPath(CheatRow row, PointerPath path)
+    {
+        row.Entry.Address = path.ToAddressSpec();
+        row.RaiseAddressChanged();
+        CheatsChanged();
+        Notify($"{row.Description} now finds its own address through {path.Display}, so it will still work after a restart.",
+            NoticeKind.Success);
+    }
+
     /// <summary>Files the selected entries under one name, so the library shows them as one line.</summary>
     private void GroupSelected(object? parameter)
     {
