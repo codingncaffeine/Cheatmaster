@@ -35,6 +35,8 @@ public partial class MainWindow : Window
 
         _viewModel.AttachRequested += ShowProcessPicker;
         _viewModel.CheatSetChanged += SyncHotkeys;
+        _viewModel.Library.PromptForValue = (title, message, initial) =>
+            ValuePromptWindow.Ask(this, title, message, initial);
         _viewModel.PromptForValue = (title, message, initial) =>
             ValuePromptWindow.Ask(this, title, message, initial,
                 "Accepts decimals and hex (0x1F). Each entry is written using its own storage type.");

@@ -539,6 +539,9 @@
                                         <MenuItem Header="Freeze at value…"
                                                   Command="{Binding DataContext.FreezeAtValueCommand}"
                                                   CommandParameter="{Binding SelectedItems}" />
+                                        <MenuItem Header="Name this cheat…"
+                                                  Command="{Binding DataContext.GroupSelectedCommand}"
+                                                  CommandParameter="{Binding SelectedItems}" />
                                         <MenuItem Header="Freeze / release"
                                                   Command="{Binding DataContext.FreezeSelectedCommand}"
                                                   CommandParameter="{Binding SelectedItems}" />
@@ -561,6 +564,14 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Cheat" Width="150" Binding="{Binding Group}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
+                                                <Setter Property="Margin" Value="6,0,0,0" />
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
                                     <DataGridTextColumn Header="Description" Width="*" Binding="{Binding Description}">
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">

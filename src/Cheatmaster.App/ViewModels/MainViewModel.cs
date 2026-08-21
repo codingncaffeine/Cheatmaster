@@ -63,6 +63,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         FreezeSelectedCommand = new RelayCommand(o => FreezeSelected(o as IList));
         SetValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: false));
         FreezeAtValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: true));
+        GroupSelectedCommand = new RelayCommand(GroupSelected);
         ShowScannerCommand = new RelayCommand(() => IsLibraryView = false);
         ShowLibraryCommand = new RelayCommand(() => IsLibraryView = true);
 
@@ -499,6 +500,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     public RelayCommand FreezeSelectedCommand { get; }
     public RelayCommand SetValueCommand { get; }
     public RelayCommand FreezeAtValueCommand { get; }
+    public RelayCommand GroupSelectedCommand { get; }
 
     private bool CanScan => IsAttached && !IsScanning &&
         (!NeedsValue || UserValue.Parse(ValueText).IsValid) &&
@@ -912,6 +914,21 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         int added = 0;
         string? firstAddress = null;
 
+        // Several candidates added at once are almost always one thing the player can see, and
+        // there is usually no way to tell which of them matters. They get one name up front so
+        // the library can show them as a single line instead of a wall of addresses.
+        string group = string.Empty;
+        if (rows.Count > 1)
+        {
+            string suggestion = string.IsNullOrWhiteSpace(ValueText) ? "New cheat" : $"Value {ValueText}";
+            group = (PromptForValue?.Invoke(
+                "Name this cheat",
+                $"{Math.Min(rows.Count, Limit)} addresses will be kept together under one name:",
+                suggestion) ?? suggestion).Trim();
+
+            if (group.Length == 0) group = suggestion;
+        }
+
         foreach (var row in rows)
         {
             if (added >= Limit) break;
@@ -920,7 +937,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             {
                 Description = SuggestDescription(),
                 Address = AddressSpec.ForAddress(Process, row.Address),
-                FreezeValue = row.ValueText
+                FreezeValue = row.ValueText,
+                Group = group
             };
             entry.SetInterpretation(row.Interpretation);
 
@@ -1078,6 +1096,34 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             Notify($"Wrote {input} to {written} of {rows.Count} entries; the rest refused.", NoticeKind.Warning);
         else
             Notify($"Wrote {input} to {written} entr{(written == 1 ? "y" : "ies")}.", NoticeKind.Success);
+    }
+
+    /// <summary>Files the selected entries under one name, so the library shows them as one line.</summary>
+    private void GroupSelected(object? parameter)
+    {
+        var rows = Rows(parameter as IList);
+        if (rows.Count == 0)
+        {
+            Notify("Select the entries you want to keep together.", NoticeKind.Info);
+            return;
+        }
+
+        string suggestion = rows.Select(static r => r.Group).FirstOrDefault(static g => !string.IsNullOrWhiteSpace(g))
+                            ?? (string.IsNullOrWhiteSpace(ValueText) ? "New cheat" : $"Value {ValueText}");
+
+        string? name = PromptForValue?.Invoke(
+            "Name this cheat",
+            $"File {rows.Count} entr{(rows.Count == 1 ? "y" : "ies")} under:",
+            suggestion);
+        if (name is null) return;
+
+        name = name.Trim();
+        foreach (var row in rows) row.SetGroup(name, notifyHost: false);
+        CheatsChanged();
+
+        Status = name.Length == 0
+            ? $"Took {rows.Count} entr{(rows.Count == 1 ? "y" : "ies")} out of their group."
+            : $"Filed {rows.Count} entr{(rows.Count == 1 ? "y" : "ies")} under \"{name}\".";
     }
 
     private static List<CheatRow> Rows(IList? selection)

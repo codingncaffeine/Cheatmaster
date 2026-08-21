@@ -15,6 +15,80 @@ public sealed record SavedCheatRow(string Description, string Address, string Ty
     public bool IsFrozen => !string.IsNullOrEmpty(FrozenAt);
 }
 
+/// <summary>
+/// A named set of addresses inside one game's table.
+///
+/// Narrowing a scan usually leaves several candidates and no certainty about which one the game
+/// actually reads, so they all get kept. Filing them under one name turns that from a wall of
+/// addresses into a single line the user recognises, which only opens when they want it.
+/// </summary>
+public sealed class LibraryGroupRow : ObservableObject
+{
+    private bool _isExpanded;
+
+    public LibraryGroupRow(string name, IEnumerable<SavedCheatRow> items)
+    {
+        Name = name;
+        foreach (var item in items) Items.Add(item);
+    }
+
+    public string Name { get; private set; }
+
+    public ObservableCollection<SavedCheatRow> Items { get; } = [];
+
+    public bool IsUngrouped => string.IsNullOrWhiteSpace(Name);
+
+    public string DisplayName => IsUngrouped ? "Loose addresses" : Name;
+
+    public int Count => Items.Count;
+
+    public int FrozenCount => Items.Count(static i => i.IsFrozen);
+
+    public bool AnyFrozen => FrozenCount > 0;
+
+    public string Summary
+    {
+        get
+        {
+            string addresses = Count == 1 ? "1 address" : $"{Count} addresses";
+            return FrozenCount > 0 ? $"{addresses} · {FrozenCount} held" : addresses;
+        }
+    }
+
+    /// <summary>The value the group is held at, when they all agree on one.</summary>
+    public string HeldValue
+    {
+        get
+        {
+            var values = Items.Where(static i => i.IsFrozen).Select(static i => i.FrozenAt).Distinct().ToList();
+            return values.Count == 1 ? values[0] : string.Empty;
+        }
+    }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => Set(ref _isExpanded, value);
+    }
+
+    public void Rename(string name)
+    {
+        Name = name;
+        Raise(nameof(Name));
+        Raise(nameof(DisplayName));
+        Raise(nameof(IsUngrouped));
+    }
+
+    public void Refreshed()
+    {
+        Raise(nameof(Count));
+        Raise(nameof(FrozenCount));
+        Raise(nameof(AnyFrozen));
+        Raise(nameof(Summary));
+        Raise(nameof(HeldValue));
+    }
+}
+
 /// <summary>One saved game as it appears in the library grid.</summary>
 public sealed class LibraryGameRow : ObservableObject
 {
@@ -122,6 +196,9 @@ public sealed class LibraryViewModel : ObservableObject
         RevealCommand = new RelayCommand(RevealSelected, () => Selected is not null);
         SetCoverCommand = new RelayCommand(SetCoverForSelected, () => Selected is not null);
         FetchArtCommand = new RelayCommand(() => StartArtLookup(force: true), () => !IsBusy);
+        RenameGroupCommand = new RelayCommand(RenameGroup);
+        SetGroupValueCommand = new RelayCommand(SetGroupValue);
+        ReleaseGroupCommand = new RelayCommand(ReleaseGroup);
     }
 
     public ObservableCollection<LibraryGameRow> Games { get; } = [];
@@ -132,6 +209,9 @@ public sealed class LibraryViewModel : ObservableObject
     public RelayCommand RevealCommand { get; }
     public RelayCommand SetCoverCommand { get; }
     public RelayCommand FetchArtCommand { get; }
+    public RelayCommand RenameGroupCommand { get; }
+    public RelayCommand SetGroupValueCommand { get; }
+    public RelayCommand ReleaseGroupCommand { get; }
 
     /// <summary>Raised when the user asks to work on a game that is not the attached one.</summary>
     public event Action<LibraryGameRow>? OpenRequested;
@@ -153,26 +233,118 @@ public sealed class LibraryViewModel : ObservableObject
         }
     }
 
-    /// <summary>The cheats saved for the selected game, for the detail pane.</summary>
-    public ObservableCollection<SavedCheatRow> SelectedCheats { get; } = [];
+    /// <summary>The cheats saved for the selected game, one line per named group.</summary>
+    public ObservableCollection<LibraryGroupRow> SelectedGroups { get; } = [];
+
+    public bool SelectedHasCheats => SelectedGroups.Count > 0;
 
     private void LoadSelectedCheats()
     {
-        SelectedCheats.Clear();
-        if (Selected is null) return;
+        var expanded = SelectedGroups.Where(static g => g.IsExpanded).Select(static g => g.Name).ToHashSet();
+        SelectedGroups.Clear();
+
+        if (Selected is null)
+        {
+            Raise(nameof(SelectedHasCheats));
+            return;
+        }
 
         var table = CheatTable.Load(Selected.Entry.Path);
-        if (table is null) return;
-
-        foreach (var entry in table.Entries)
+        if (table is null)
         {
-            SelectedCheats.Add(new SavedCheatRow(
+            Raise(nameof(SelectedHasCheats));
+            return;
+        }
+
+        foreach (var group in table.Entries.GroupBy(static e => e.Group ?? string.Empty))
+        {
+            var rows = group.Select(static entry => new SavedCheatRow(
                 entry.Description,
                 entry.Address.Display,
                 entry.Interpretation.Label,
                 entry.Frozen ? entry.FreezeValue : string.Empty,
                 string.IsNullOrWhiteSpace(entry.Hotkey) ? "—" : entry.Hotkey));
+
+            var row = new LibraryGroupRow(group.Key, rows);
+
+            // A single loose address has nothing to hide, so it opens by default.
+            row.IsExpanded = expanded.Contains(group.Key) || (row.IsUngrouped && row.Count <= 3);
+            SelectedGroups.Add(row);
         }
+
+        Raise(nameof(SelectedHasCheats));
+    }
+
+    /// <summary>Set from the view, so the library can ask for a value without owning a window.</summary>
+    public Func<string, string, string, string?>? PromptForValue { get; set; }
+
+    private void RenameGroup(object? parameter)
+    {
+        if (parameter is not LibraryGroupRow group || Selected is null) return;
+
+        string? name = PromptForValue?.Invoke("Rename cheat", "What should this be called?", group.DisplayName);
+        if (name is null) return;
+
+        name = name.Trim();
+        UpdateTable(entry =>
+        {
+            if ((entry.Group ?? string.Empty) == group.Name) entry.Group = name;
+        });
+
+        LoadSelectedCheats();
+        Status = $"Renamed to \"{name}\".";
+    }
+
+    /// <summary>
+    /// Sets the value a group is held at. This works with the game closed: the value is stored
+    /// with the cheat and applied the next time it is attached and frozen.
+    /// </summary>
+    private void SetGroupValue(object? parameter)
+    {
+        if (parameter is not LibraryGroupRow group || Selected is null) return;
+
+        string initial = group.HeldValue.Length > 0 ? group.HeldValue : "0";
+        string? value = PromptForValue?.Invoke(
+            "Hold at value",
+            $"Hold all {group.Count} address{(group.Count == 1 ? "" : "es")} in \"{group.DisplayName}\" at:",
+            initial);
+        if (string.IsNullOrWhiteSpace(value)) return;
+
+        value = value.Trim();
+        UpdateTable(entry =>
+        {
+            if ((entry.Group ?? string.Empty) != group.Name) return;
+            entry.FreezeValue = value;
+            entry.Frozen = true;
+        });
+
+        LoadSelectedCheats();
+        Status = $"\"{group.DisplayName}\" will be held at {value} next time this game is attached.";
+    }
+
+    private void ReleaseGroup(object? parameter)
+    {
+        if (parameter is not LibraryGroupRow group || Selected is null) return;
+
+        bool freeze = group.FrozenCount < group.Count;
+        UpdateTable(entry =>
+        {
+            if ((entry.Group ?? string.Empty) == group.Name) entry.Frozen = freeze;
+        });
+
+        LoadSelectedCheats();
+        Status = freeze ? $"\"{group.DisplayName}\" will be held." : $"\"{group.DisplayName}\" released.";
+    }
+
+    private void UpdateTable(Action<CheatEntry> change)
+    {
+        if (Selected is null) return;
+
+        var table = CheatTable.Load(Selected.Entry.Path);
+        if (table is null) return;
+
+        foreach (var entry in table.Entries) change(entry);
+        table.Save(Selected.Entry.Path);
     }
 
     public bool HasSelection => Selected is not null;

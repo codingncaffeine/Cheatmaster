@@ -103,6 +103,31 @@ public sealed class CheatRow : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The label this entry is filed under. Narrowing a scan usually leaves several candidates
+    /// and no way to tell which one matters, so they get kept together under one name rather
+    /// than scattered through the table as loose addresses.
+    /// </summary>
+    public string Group
+    {
+        get => Entry.Group;
+        set
+        {
+            if (Entry.Group == value) return;
+            Entry.Group = value;
+            Raise();
+            _host.CheatsChanged();
+        }
+    }
+
+    public void SetGroup(string name, bool notifyHost)
+    {
+        if (Entry.Group == name) return;
+        Entry.Group = name;
+        Raise(nameof(Group));
+        if (notifyHost) _host.CheatsChanged();
+    }
+
     public string Notes
     {
         get => Entry.Notes;
