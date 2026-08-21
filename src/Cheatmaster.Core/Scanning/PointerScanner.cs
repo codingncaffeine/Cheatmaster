@@ -38,6 +38,17 @@ public sealed class PointerScanOptions
 
     /// <summary>Guards against a runaway search in a target with millions of self-referencing pointers.</summary>
     public int MaxNodesVisited { get; set; } = 2_000_000;
+
+    /// <summary>
+    /// The offset from the object to the value, when watching the game's code has already
+    /// established it.
+    ///
+    /// Blind, the last step of a route has to accept a pointer landing anywhere within a
+    /// structure's worth of the target, which is where most of the noise in a pointer scan comes
+    /// from. Having watched an instruction reach the value as <c>[RBX+18]</c>, that offset is
+    /// known exactly, and every route that arrives some other way can be discarded on sight.
+    /// </summary>
+    public int? FinalOffset { get; set; }
 }
 
 /// <summary>
@@ -75,11 +86,22 @@ public static class PointerScanner
             if ((nodes & 8191) == 0)
                 progress?.Report(new ScanProgress("Tracing pointers", nodes, options.MaxNodesVisited, found.Count));
 
-            map.FindPointersTo(address, options.MaxOffset, candidates);
+            // A known field offset can sit further into the object than the search would otherwise
+            // look, and refusing to look that far would rule out the one route we already know exists.
+            int reach = offsets.Length == 0 && options.FinalOffset is { } known
+                ? Math.Max(options.MaxOffset, known)
+                : options.MaxOffset;
+
+            map.FindPointersTo(address, reach, candidates);
 
             foreach (var (source, offset) in candidates)
             {
                 if (found.Count >= options.MaxResults) break;
+
+                // The first step out from the target is the last one a route applies, so a known
+                // field offset constrains exactly this one.
+                if (offsets.Length == 0 && options.FinalOffset is { } required && offset != required)
+                    continue;
 
                 var chain = Prepend(offset, offsets);
 

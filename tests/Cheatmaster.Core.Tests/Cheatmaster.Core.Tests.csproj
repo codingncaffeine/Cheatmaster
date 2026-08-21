@@ -11,5 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cheatmaster.Core\Cheatmaster.Core.csproj" />
+    <!-- Not used as a library: the watchpoint tests start it as a process, which needs it
+         built and sitting next to them. -->
+    <ProjectReference Include="..\Cheatmaster.WatchTarget\Cheatmaster.WatchTarget.csproj" />
   </ItemGroup>
 </Project>

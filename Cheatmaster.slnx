@@ -5,5 +5,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Cheatmaster.Core.Tests/Cheatmaster.Core.Tests.csproj" />
+    <Project Path="tests/Cheatmaster.WatchTarget/Cheatmaster.WatchTarget.csproj" />
   </Folder>
 </Solution>
