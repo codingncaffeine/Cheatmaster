@@ -30,7 +30,9 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <Button Content="Find artwork" Command="{Binding FetchArtCommand}" Margin="0,0,8,0"
                         ToolTip="Look up covers and descriptions for every saved game" />
-                <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+                <Button Content="Cloud backup" Click="OnCloudBackup"
+                        ToolTip="Back your library up to a private GitHub repository" />
             </StackPanel>
         </Grid>
 

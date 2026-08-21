@@ -140,7 +140,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
                 table.Description = metadata.Description;
                 table.Developer = metadata.Developer;
                 table.ReleaseDate = metadata.ReleaseDate;
-                table.SteamAppId = metadata.AppId;
+                table.SteamAppId = metadata.SteamAppId;
                 table.ArtPath = metadata.ArtPath;
                 GameName = table.GameName;
             }

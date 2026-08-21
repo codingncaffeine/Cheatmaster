@@ -1,0 +1,121 @@
+<Window x:Class="Cheatmaster.App.Views.CloudSyncWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Cloud backup"
+        Icon="/Assets/cheatmaster.ico"
+        Height="470" Width="520"
+        MinHeight="420" MinWidth="460"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        WindowStyle="None"
+        ShowInTaskbar="False">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
+                <TextBlock Text="Cloud backup" Margin="14,0,0,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="12" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="20,18,20,0">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,9,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource TextFaintBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSignedIn}" Value="True">
+                                        <Setter Property="Fill" Value="{StaticResource SuccessBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding AccountLine}" FontSize="14" FontWeight="SemiBold" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding LastSyncText}" Margin="18,4,0,0" FontSize="11"
+                           Foreground="{StaticResource TextFaintBrush}" />
+
+                <!-- device code -->
+                <Border Margin="0,18,0,0" Padding="16,14" CornerRadius="6"
+                        Background="#1AE8A33D" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                        Visibility="{Binding IsWaitingForAuthorisation, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="ENTER THIS CODE ON GITHUB" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Text="{Binding UserCode}" FontSize="30" FontWeight="Bold"
+                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Center"
+                                   Foreground="{StaticResource AccentBrush}" Margin="0,4,0,0" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
+                            <Button Content="Copy code" Command="{Binding CopyCodeCommand}" Margin="0,0,8,0" />
+                            <Button Content="Open GitHub" Command="{Binding OpenVerificationCommand}"
+                                    Style="{StaticResource PrimaryButton}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- explanation -->
+                <TextBlock Margin="0,18,0,0" TextWrapping="Wrap" LineHeight="19" FontSize="12"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Text="Cheatmaster creates one private repository on your account and keeps your cheat tables, covers and notes in it. Sign in on another machine and everything comes back. Nothing is public, and no server sits in the middle." />
+
+                <Border Margin="0,14,0,0" Padding="12,10" Style="{StaticResource CardBorder}"
+                        Visibility="{Binding IsSignedIn, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <CheckBox Content="Back up automatically when the app starts"
+                                  IsChecked="{Binding AutoBackup}" />
+                        <TextBlock Margin="22,4,0,0" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding RepositoryName, StringFormat=Backed up to your private {0} repository.}" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="{Binding Status}" Margin="0,16,0,0" TextWrapping="Wrap" FontSize="11.5"
+                           Foreground="{StaticResource TextMutedBrush}" />
+            </StackPanel>
+
+            <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="16,12">
+                <Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Sign out" Command="{Binding SignOutCommand}" Margin="0,0,8,0"
+                                Visibility="{Binding IsSignedIn, Converter={StaticResource BoolToVis}}" />
+                        <Button Content="Open on GitHub" Command="{Binding OpenRepositoryCommand}"
+                                Visibility="{Binding IsSignedIn, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0"
+                                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                        <Button Content="Sign in with GitHub" Command="{Binding SignInCommand}" MinWidth="150"
+                                Style="{StaticResource PrimaryButton}"
+                                Visibility="{Binding IsSignedIn, Converter={StaticResource BoolToVisInverted}}" />
+                        <Button Content="Back up now" Command="{Binding SyncCommand}" MinWidth="130"
+                                Style="{StaticResource PrimaryButton}"
+                                Visibility="{Binding IsSignedIn, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

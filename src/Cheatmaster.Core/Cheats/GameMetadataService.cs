@@ -1,130 +1,130 @@
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Cheatmaster.Core.Cheats;
 
-public sealed record GameMetadata(int AppId, string Name, string Description, string Developer, string ReleaseDate, string ArtPath);
+public sealed record GameMetadata(string Provider, int SteamAppId, long GogProductId, string Name,
+    string Description, string Developer, string ReleaseDate, string ArtPath);
 
 /// <summary>
-/// Fills in a cover image and a description for a saved game.
+/// Finds a cover image and a description for a saved game, without an API key, an account, or a
+/// quota to run out of.
 ///
-/// Uses the public Steam store endpoints, which need no key and no registration. The identity
-/// is resolved from the install itself wherever possible — a <c>steam_appid.txt</c> beside the
-/// executable, or the folder name under <c>steamapps\common</c> — and only falls back to
-/// searching by name when the install gives nothing away. Everything fetched is cached on
-/// disk, so a game is looked up once and never again.
+/// Identity comes from the install first (see <see cref="GameIdentity"/>), then two public store
+/// catalogues are tried in turn — Steam, then GOG — because plenty of games only exist on one of
+/// them. Every call is cancellable and time-boxed: artwork is decoration, and nothing about it
+/// is ever allowed to make someone wait to use the app.
 /// </summary>
-public sealed class GameMetadataService
+public sealed partial class GameMetadataService
 {
     private static readonly HttpClient Http = CreateClient();
+
+    /// <summary>A whole lookup, across every candidate and both catalogues, gives up after this.</summary>
+    public static readonly TimeSpan LookupBudget = TimeSpan.FromSeconds(25);
 
     private readonly string _artDirectory;
 
     public GameMetadataService(string? artDirectory = null)
     {
-        _artDirectory = artDirectory ?? Path.Combine(CheatLibrary.DefaultRoot, "art");
+        _artDirectory = artDirectory ?? DefaultArtDirectory;
         Directory.CreateDirectory(_artDirectory);
     }
 
     private static HttpClient CreateClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         client.DefaultRequestHeaders.Add("User-Agent", "Cheatmaster/0.1 (+https://github.com/codingncaffeine/Cheatmaster)");
         return client;
     }
 
     public string ArtDirectory => _artDirectory;
 
+    /// <summary>
+    /// Covers live at a path derived from the library key, never at a path recorded in the
+    /// table. An absolute path saved on one machine means nothing on the next one, and these
+    /// tables are meant to travel.
+    /// </summary>
+    public static string DefaultArtDirectory => Path.Combine(CheatLibrary.DefaultRoot, "art");
+
+    public static string ArtFileFor(string key) => Path.Combine(DefaultArtDirectory, key + ".jpg");
+
     public string ArtPathFor(string key) => Path.Combine(_artDirectory, key + ".jpg");
 
     public bool HasArt(string key) => File.Exists(ArtPathFor(key));
 
     /// <summary>
-    /// Looks up a game and caches its cover. Returns null when nothing matched or the network is
-    /// unavailable; a missing cover is never worth an error.
+    /// Looks a game up and caches its cover. Returns null when nothing matched or the network is
+    /// unavailable — a missing cover is never worth an error, and never worth a delay.
     /// </summary>
     public async Task<GameMetadata?> FetchAsync(GameFingerprint fingerprint, CancellationToken ct = default)
     {
-        try
-        {
-            int appId = ResolveAppId(fingerprint);
-            if (appId == 0)
-            {
-                appId = await SearchAsync(SearchTermFor(fingerprint), ct).ConfigureAwait(false);
-                if (appId == 0) return null;
-            }
-
-            var details = await DetailsAsync(appId, ct).ConfigureAwait(false);
-            if (details is null) return null;
-
-            string artPath = ArtPathFor(fingerprint.Key);
-            if (!File.Exists(artPath))
-                await DownloadArtAsync(appId, details.Value.HeaderImage, artPath, ct).ConfigureAwait(false);
-
-            return new GameMetadata(appId, details.Value.Name, details.Value.Description,
-                details.Value.Developer, details.Value.ReleaseDate, File.Exists(artPath) ? artPath : string.Empty);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or IOException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>Reads the app id straight out of the install, which beats any name search.</summary>
-    public static int ResolveAppId(GameFingerprint fingerprint)
-    {
-        if (string.IsNullOrEmpty(fingerprint.Path)) return 0;
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(LookupBudget);
+        var token = budget.Token;
 
         try
         {
-            var directory = new DirectoryInfo(Path.GetDirectoryName(fingerprint.Path)!);
+            // Reading the install touches the disk, so it happens off whatever thread asked.
+            var hints = await Task.Run(() => GameIdentity.Resolve(fingerprint), token).ConfigureAwait(false);
 
-            // Many builds ship the id beside the executable, or one level up.
-            for (var at = directory; at is not null; at = at.Parent)
+            foreach (var hint in hints)
             {
-                string marker = Path.Combine(at.FullName, "steam_appid.txt");
-                if (File.Exists(marker) && int.TryParse(File.ReadAllText(marker).Trim(), out int id) && id > 0)
-                    return id;
+                token.ThrowIfCancellationRequested();
 
-                if (string.Equals(at.Name, "common", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(at.Parent?.Name, "steamapps", StringComparison.OrdinalIgnoreCase))
-                    break;
+                var found = await LookUpAsync(hint, token).ConfigureAwait(false);
+                if (found is null) continue;
+
+                string artPath = ArtPathFor(fingerprint.Key);
+                if (!File.Exists(artPath))
+                    await DownloadArtAsync(found.Value.ArtUrls, artPath, token).ConfigureAwait(false);
+
+                return new GameMetadata(found.Value.Provider, found.Value.SteamAppId, found.Value.GogProductId,
+                    found.Value.Name, found.Value.Description, found.Value.Developer, found.Value.ReleaseDate,
+                    File.Exists(artPath) ? artPath : string.Empty);
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or IOException)
         {
-            // An unreadable install just means we fall back to searching by name.
+            // Offline, slow, or nothing matched. Either way the app carries on.
         }
 
-        return 0;
+        return null;
     }
 
-    /// <summary>
-    /// The folder a game is installed into is usually its real title, which searches far better
-    /// than an executable name.
-    /// </summary>
-    public static string SearchTermFor(GameFingerprint fingerprint)
+    private readonly record struct Listing(string Provider, int SteamAppId, long GogProductId, string Name,
+        string Description, string Developer, string ReleaseDate, string[] ArtUrls);
+
+    private static async Task<Listing?> LookUpAsync(GameIdentityHint hint, CancellationToken ct)
     {
-        string path = fingerprint.Path;
-        if (!string.IsNullOrEmpty(path))
+        if (hint.SteamAppId > 0)
         {
-            string[] parts = path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length - 1; i++)
-            {
-                if (string.Equals(parts[i], "common", StringComparison.OrdinalIgnoreCase) &&
-                    i > 0 && string.Equals(parts[i - 1], "steamapps", StringComparison.OrdinalIgnoreCase))
-                    return parts[i + 1];
-            }
+            var exact = await SteamDetailsAsync(hint.SteamAppId, ct).ConfigureAwait(false);
+            if (exact is not null) return exact;
         }
 
-        string name = fingerprint.DisplayName;
-        return string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(fingerprint.ExecutableName) : name;
+        if (hint.GogProductId > 0)
+        {
+            var exact = await GogDetailsAsync(hint.GogProductId, ct).ConfigureAwait(false);
+            if (exact is not null) return exact;
+        }
+
+        if (string.IsNullOrWhiteSpace(hint.Name)) return null;
+
+        int steamId = await SteamSearchAsync(hint.Name, ct).ConfigureAwait(false);
+        if (steamId > 0)
+        {
+            var listing = await SteamDetailsAsync(steamId, ct).ConfigureAwait(false);
+            if (listing is not null) return listing;
+        }
+
+        return await GogSearchAsync(hint.Name, ct).ConfigureAwait(false);
     }
 
-    private static async Task<int> SearchAsync(string term, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(term)) return 0;
+    // ---------------------------------------------------------------- Steam
 
+    private static async Task<int> SteamSearchAsync(string term, CancellationToken ct)
+    {
         string url = "https://store.steampowered.com/api/storesearch/?cc=us&l=en&term=" + Uri.EscapeDataString(term);
         using var stream = await Http.GetStreamAsync(url, ct).ConfigureAwait(false);
         using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
@@ -137,9 +137,7 @@ public sealed class GameMetadataService
         return 0;
     }
 
-    private readonly record struct Details(string Name, string Description, string Developer, string ReleaseDate, string HeaderImage);
-
-    private static async Task<Details?> DetailsAsync(int appId, CancellationToken ct)
+    private static async Task<Listing?> SteamDetailsAsync(int appId, CancellationToken ct)
     {
         string url = $"https://store.steampowered.com/api/appdetails?appids={appId}&l=english";
         using var stream = await Http.GetStreamAsync(url, ct).ConfigureAwait(false);
@@ -149,43 +147,139 @@ public sealed class GameMetadataService
         if (!entry.TryGetProperty("success", out var success) || !success.GetBoolean()) return null;
         if (!entry.TryGetProperty("data", out var data)) return null;
 
-        string name = Text(data, "name");
-        string description = Text(data, "short_description");
-        string header = Text(data, "header_image");
+        string developer = FirstOf(data, "developers");
+        string released = data.TryGetProperty("release_date", out var release) && release.TryGetProperty("date", out var date)
+            ? date.GetString() ?? string.Empty
+            : string.Empty;
 
-        string developer = string.Empty;
-        if (data.TryGetProperty("developers", out var developers) && developers.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var d in developers.EnumerateArray())
-            {
-                developer = d.GetString() ?? string.Empty;
-                break;
-            }
-        }
-
-        string released = string.Empty;
-        if (data.TryGetProperty("release_date", out var release) && release.TryGetProperty("date", out var date))
-            released = date.GetString() ?? string.Empty;
-
-        return new Details(name, description, developer, released, header);
-
-        static string Text(JsonElement element, string property) =>
-            element.TryGetProperty(property, out var value) ? value.GetString() ?? string.Empty : string.Empty;
-    }
-
-    private static async Task DownloadArtAsync(int appId, string headerImage, string destination, CancellationToken ct)
-    {
-        // The tall library capsule looks far better in a grid than the wide header, but not
-        // every title has one.
-        string[] candidates =
+        // The tall library capsule suits a grid far better than the wide header image.
+        string[] art =
         [
             $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/library_600x900.jpg",
-            headerImage
+            Text(data, "header_image")
         ];
 
+        return new Listing("Steam", appId, 0, Text(data, "name"), Text(data, "short_description"),
+            developer, released, art);
+    }
+
+    // ---------------------------------------------------------------- GOG
+
+    private static async Task<Listing?> GogSearchAsync(string term, CancellationToken ct)
+    {
+        string url = "https://embed.gog.com/games/ajax/filtered?mediaType=game&search=" + Uri.EscapeDataString(term);
+        using var stream = await Http.GetStreamAsync(url, ct).ConfigureAwait(false);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+
+        if (!json.RootElement.TryGetProperty("products", out var products)) return null;
+
+        foreach (var product in products.EnumerateArray())
+        {
+            long id = product.TryGetProperty("id", out var idElement) && idElement.TryGetInt64(out long parsed) ? parsed : 0;
+            string title = Text(product, "title");
+            string image = Text(product, "image");
+            string developer = Text(product, "developer");
+
+            string[] art = image.Length > 0
+                ? [BuildGogCard(image), "https:" + image + ".jpg"]
+                : [];
+
+            // The search result already carries everything except a blurb, so ask for that only
+            // if it is cheap to get.
+            string description = id > 0 ? await GogDescriptionAsync(id, ct).ConfigureAwait(false) : string.Empty;
+            return new Listing("GOG", 0, id, title, description, developer, string.Empty, art);
+        }
+
+        return null;
+    }
+
+    private static async Task<Listing?> GogDetailsAsync(long productId, CancellationToken ct)
+    {
+        string url = $"https://api.gog.com/products/{productId}?expand=description";
+        using var stream = await Http.GetStreamAsync(url, ct).ConfigureAwait(false);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+
+        var root = json.RootElement;
+        string title = Text(root, "title");
+        if (title.Length == 0) return null;
+
+        string description = string.Empty;
+        if (root.TryGetProperty("description", out var descriptionElement))
+            description = StripHtml(Text(descriptionElement, "lead"));
+
+        string released = Text(root, "release_date");
+        if (released.Length >= 10) released = released[..10];
+
+        var art = new List<string>();
+        if (root.TryGetProperty("images", out var images))
+        {
+            string logo = Text(images, "logo2x");
+            if (logo.Length == 0) logo = Text(images, "logo");
+            if (logo.Length > 0)
+            {
+                string card = BuildGogCard(logo);
+                if (card.Length > 0) art.Add(card);
+            }
+
+            string background = Text(images, "background");
+            if (background.Length > 0) art.Add("https:" + background + ".jpg");
+        }
+
+        return new Listing("GOG", 0, productId, title, description, string.Empty, released, [.. art]);
+    }
+
+    private static async Task<string> GogDescriptionAsync(long productId, CancellationToken ct)
+    {
+        try
+        {
+            var listing = await GogDetailsAsync(productId, ct).ConfigureAwait(false);
+            return listing?.Description ?? string.Empty;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// GOG image URLs are a content hash plus a size suffix, so the tall store card can be built
+    /// from any other image for the same product.
+    /// </summary>
+    private static string BuildGogCard(string imageUrl)
+    {
+        var match = GogHashPattern().Match(imageUrl);
+        return match.Success
+            ? $"https://images.gog.com/{match.Groups[1].Value}_product_card_v2_mobile_slider_639.jpg"
+            : string.Empty;
+    }
+
+    // ---------------------------------------------------------------- shared
+
+    private static string Text(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static string FirstOf(JsonElement element, string property)
+    {
+        if (!element.TryGetProperty(property, out var array) || array.ValueKind != JsonValueKind.Array)
+            return string.Empty;
+
+        foreach (var item in array.EnumerateArray())
+            return item.GetString() ?? string.Empty;
+        return string.Empty;
+    }
+
+    private static string StripHtml(string html) =>
+        string.IsNullOrEmpty(html) ? string.Empty : HtmlTagPattern().Replace(html, string.Empty).Trim();
+
+    private static async Task DownloadArtAsync(string[] candidates, string destination, CancellationToken ct)
+    {
         foreach (string url in candidates)
         {
             if (string.IsNullOrEmpty(url)) continue;
+            ct.ThrowIfCancellationRequested();
+
             try
             {
                 using var response = await Http.GetAsync(url, ct).ConfigureAwait(false);
@@ -205,4 +299,10 @@ public sealed class GameMetadataService
             }
         }
     }
+
+    [GeneratedRegex(@"images\.gog\.com/([0-9a-f]{16,})")]
+    private static partial Regex GogHashPattern();
+
+    [GeneratedRegex(@"<[^>]+>")]
+    private static partial Regex HtmlTagPattern();
 }

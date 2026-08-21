@@ -8,4 +8,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Cheatmaster.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- DPAPI, for the GitHub token. Not in the base library on .NET Core. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
 </Project>

@@ -7,6 +7,7 @@ using System.Windows.Media;
 using Cheatmaster.App.Services;
 using Cheatmaster.App.ViewModels;
 using Cheatmaster.App.Views;
+using Cheatmaster.Core.Sync;
 
 namespace Cheatmaster.App;
 
@@ -57,6 +58,8 @@ public partial class MainWindow : Window
             CheatsGrid.BeginningEdit += (_, _) => _viewModel.IsEditingCell = true;
             CheatsGrid.CellEditEnding += (_, _) => _viewModel.IsEditingCell = false;
             CheatsGrid.RowEditEnding += (_, _) => _viewModel.IsEditingCell = false;
+
+            StartBackgroundBackup();
         };
 
         Closing += (_, _) =>
@@ -90,6 +93,40 @@ public partial class MainWindow : Window
         if (e.Key != Key.Enter) return;
         if (_viewModel.ScanCommand.CanExecute(null)) _viewModel.ScanCommand.Execute(null);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Backs the library up in the background at startup when the user has asked for it. Nothing
+    /// waits on it: if GitHub is slow or unreachable the app is simply unaffected.
+    /// </summary>
+    private void StartBackgroundBackup()
+    {
+        if (!_viewModel.Settings.AutoBackup) return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var sync = new GitHubSyncService();
+                if (!sync.IsSignedIn) return;
+
+                var outcome = await sync.SyncAsync();
+                _viewModel.Settings.LastSyncUtc = DateTimeOffset.UtcNow;
+
+                if (outcome.Uploaded > 0 || outcome.Downloaded > 0)
+                    _ = Dispatcher.BeginInvoke(() => _viewModel.Notify("Cloud backup: " + outcome.Message, NoticeKind.Success));
+            }
+            catch (Exception ex)
+            {
+                _ = Dispatcher.BeginInvoke(() => _viewModel.Notify("Cloud backup skipped: " + ex.Message, NoticeKind.Info));
+            }
+        });
+    }
+
+    public void ShowCloudBackup()
+    {
+        var window = new CloudSyncWindow(_viewModel.Settings) { Owner = this };
+        window.ShowDialog();
     }
 
     private void ShowProcessPicker()

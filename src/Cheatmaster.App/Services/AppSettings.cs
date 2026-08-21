@@ -22,6 +22,10 @@ public sealed class AppSettings
 
     /// <summary>Look up cover art and a description for saved games from the public store listing.</summary>
     public bool FetchArtwork { get; set; } = true;
+
+    /// <summary>Back the library up to GitHub when the app starts, once signed in.</summary>
+    public bool AutoBackup { get; set; }
+    public DateTimeOffset? LastSyncUtc { get; set; }
     public bool AutoLoadTables { get; set; } = true;
     public bool LiveValues { get; set; } = true;
     public int MaxResultsPerInterpretation { get; set; } = 2_000_000;

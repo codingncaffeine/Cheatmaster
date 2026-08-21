@@ -96,6 +96,9 @@ public sealed class CheatTable
 
     /// <summary>Set once a lookup has been attempted, so a game with no listing is not retried forever.</summary>
     public bool MetadataFetched { get; set; }
+
+    /// <summary>Failed attempts so far. Automatic lookup gives up after a few; the button always retries.</summary>
+    public int MetadataAttempts { get; set; }
     public DateTimeOffset Created { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset Modified { get; set; } = DateTimeOffset.Now;
     public List<CheatEntry> Entries { get; set; } = [];

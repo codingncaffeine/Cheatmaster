@@ -87,7 +87,7 @@ public sealed class CheatLibrary
                 table.Description,
                 table.Developer,
                 table.ReleaseDate,
-                table.ArtPath,
+                GameMetadataService.ArtFileFor(Path.GetFileNameWithoutExtension(path)),
                 table.Notes));
         }
 

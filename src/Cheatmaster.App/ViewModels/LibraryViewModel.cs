@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Cheatmaster.App.Infrastructure;
 using Cheatmaster.Core.Cheats;
 
@@ -104,6 +105,7 @@ public sealed class LibraryViewModel : ObservableObject
     private readonly CheatLibrary _library;
     private readonly GameMetadataService _metadata = new();
     private readonly List<LibraryGameRow> _all = [];
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
 
     private LibraryGameRow? _selected;
     private string _searchText = string.Empty;
@@ -119,7 +121,7 @@ public sealed class LibraryViewModel : ObservableObject
         ExportCommand = new RelayCommand(ExportSelected, () => Selected is not null);
         RevealCommand = new RelayCommand(RevealSelected, () => Selected is not null);
         SetCoverCommand = new RelayCommand(SetCoverForSelected, () => Selected is not null);
-        FetchArtCommand = new RelayCommand(async () => await FetchMissingArtAsync(force: true), () => !IsBusy);
+        FetchArtCommand = new RelayCommand(() => StartArtLookup(force: true), () => !IsBusy);
     }
 
     public ObservableCollection<LibraryGameRow> Games { get; } = [];
@@ -203,15 +205,25 @@ public sealed class LibraryViewModel : ObservableObject
 
     public async Task ReloadAsync()
     {
+        // Reading every table and decoding every cover is disk work, so it happens off the UI
+        // thread. The rows are plain objects and their bitmaps are frozen, which makes them safe
+        // to build here and hand over.
+        var rows = await Task.Run(() =>
+        {
+            var built = new List<LibraryGameRow>();
+            foreach (var entry in _library.List()) built.Add(new LibraryGameRow(entry));
+            return built;
+        }).ConfigureAwait(true);
+
         _all.Clear();
-        foreach (var entry in _library.List()) _all.Add(new LibraryGameRow(entry));
+        _all.AddRange(rows);
 
         ApplyFilter();
         Status = _all.Count == 0
             ? "No saved games yet."
             : $"{_all.Count} game{(_all.Count == 1 ? "" : "s")} · {_all.Sum(static g => g.Entry.CheatCount)} cheats saved";
 
-        if (FetchArtworkEnabled) await FetchMissingArtAsync(force: false);
+        if (FetchArtworkEnabled) StartArtLookup(force: false);
     }
 
     private void ApplyFilter()
@@ -235,39 +247,51 @@ public sealed class LibraryViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Looks up cover art and a description for games that have none. Each game is attempted
-    /// once unless the user asks again, so an unlisted title does not retry on every visit.
+    /// Kicks off the artwork lookup and returns immediately. Nothing about a store being slow or
+    /// unreachable is allowed to hold the library up, so the whole job — file reads included —
+    /// happens on a background thread and only the finished results come back to the UI.
     /// </summary>
-    public async Task FetchMissingArtAsync(bool force)
+    public void StartArtLookup(bool force)
     {
         if (IsBusy) return;
-
-        var pending = new List<LibraryGameRow>();
-        foreach (var game in _all)
-        {
-            var table = CheatTable.Load(game.Entry.Path);
-            if (table is null) continue;
-            if (!force && (table.MetadataFetched || game.HasCover)) continue;
-            pending.Add(game);
-        }
-
-        if (pending.Count == 0) return;
-
         IsBusy = true;
+        _ = Task.Run(() => FetchMissingArtAsync(force));
+    }
+
+    /// <summary>
+    /// Fills in covers and descriptions for games that have none. A game that simply is not
+    /// listed anywhere stops being retried automatically after a few goes; the toolbar button
+    /// forces a fresh attempt regardless.
+    /// </summary>
+    private async Task FetchMissingArtAsync(bool force)
+    {
+        const int GiveUpAfter = 3;
+        var pending = new List<LibraryGameRow>();
         int found = 0;
+
         try
         {
+            foreach (var game in _all.ToList())
+            {
+                var table = CheatTable.Load(game.Entry.Path);
+                if (table is null) continue;
+                if (force) { pending.Add(game); continue; }
+                if (table.MetadataFetched || File.Exists(GameMetadataService.ArtFileFor(game.Key))) continue;
+                if (table.MetadataAttempts >= GiveUpAfter) continue;
+                pending.Add(game);
+            }
+
             foreach (var game in pending)
             {
                 var table = CheatTable.Load(game.Entry.Path);
                 if (table is null) continue;
 
-                Status = $"Looking up {table.GameName}…";
-                var fingerprint = new GameFingerprint(table.ExecutableName, table.GameName, table.GameVersion,
-                    table.ExecutableHash, FindInstallPath(table));
+                Post(() => Status = $"Looking up {table.GameName}…");
 
-                var metadata = await _metadata.FetchAsync(fingerprint);
-                table.MetadataFetched = true;
+                var fingerprint = new GameFingerprint(table.ExecutableName, table.GameName, table.GameVersion,
+                    table.ExecutableHash, table.ExecutablePath);
+
+                var metadata = await _metadata.FetchAsync(fingerprint).ConfigureAwait(false);
 
                 if (metadata is not null)
                 {
@@ -275,25 +299,47 @@ public sealed class LibraryViewModel : ObservableObject
                     table.Description = metadata.Description;
                     table.Developer = metadata.Developer;
                     table.ReleaseDate = metadata.ReleaseDate;
-                    table.SteamAppId = metadata.AppId;
+                    table.SteamAppId = metadata.SteamAppId;
                     table.ArtPath = metadata.ArtPath;
+                    table.MetadataFetched = true;
                     found++;
+                }
+                else
+                {
+                    // Only a success closes the door; a miss might just be a network hiccup.
+                    table.MetadataAttempts++;
                 }
 
                 table.Save(game.Entry.Path);
-                game.Update(ToEntry(table, game.Entry.Path));
+                var entry = ToEntry(table, game.Entry.Path);
+                Post(() => game.Update(entry));
             }
+        }
+        catch (Exception ex)
+        {
+            Post(() => Status = "Artwork lookup stopped: " + ex.Message);
         }
         finally
         {
-            IsBusy = false;
-            Status = found > 0
-                ? $"Found artwork for {found} game{(found == 1 ? "" : "s")}."
-                : $"{_all.Count} game{(_all.Count == 1 ? "" : "s")} in the library.";
+            int total = _all.Count;
+            int matched = found;
+            Post(() =>
+            {
+                IsBusy = false;
+                Status = matched > 0
+                    ? $"Found artwork for {matched} game{(matched == 1 ? "" : "s")}."
+                    : $"{total} game{(total == 1 ? "" : "s")} in the library.";
+            });
         }
     }
 
-    private static string FindInstallPath(CheatTable table) => table.ExecutablePath;
+    private void Post(Action action)
+    {
+        if (_dispatcher.CheckAccess()) action();
+        else _dispatcher.BeginInvoke(action);
+    }
+
+
 
     private static LibraryEntry ToEntry(CheatTable table, string path) => new(
         Path.GetFileNameWithoutExtension(path),
@@ -306,7 +352,7 @@ public sealed class LibraryViewModel : ObservableObject
         table.Description,
         table.Developer,
         table.ReleaseDate,
-        table.ArtPath,
+        GameMetadataService.ArtFileFor(Path.GetFileNameWithoutExtension(path)),
         table.Notes);
 
     public void Open(LibraryGameRow row) => OpenRequested?.Invoke(row);
