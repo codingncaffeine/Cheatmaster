@@ -77,7 +77,7 @@ public sealed class CheatTable
     public const string FileExtension = ".cmt";
 
     /// <summary>Bumped when the lookup itself improves, so existing tables refresh once instead of keeping stale text.</summary>
-    public const int CurrentMetadataVersion = 2;
+    public const int CurrentMetadataVersion = 3;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
     public string GameName { get; set; } = string.Empty;
@@ -93,6 +93,7 @@ public sealed class CheatTable
     /// <summary>Cover art and blurb, filled in once from the store listing and then left alone.</summary>
     public string Description { get; set; } = string.Empty;
     public string Developer { get; set; } = string.Empty;
+    public string Genres { get; set; } = string.Empty;
     public string ReleaseDate { get; set; } = string.Empty;
     public int SteamAppId { get; set; }
     public long GogProductId { get; set; }

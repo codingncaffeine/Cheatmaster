@@ -3,7 +3,7 @@ namespace Cheatmaster.Core.Cheats;
 /// <summary>A game in the library, with just enough detail to list it without loading every entry.</summary>
 public sealed record LibraryEntry(string Key, string GameName, string ExecutableName, string GameVersion,
     int CheatCount, DateTimeOffset Modified, string Path, string Description, string Developer,
-    string ReleaseDate, string ArtPath, string Notes)
+    string ReleaseDate, string Genres, string ArtPath, string Notes)
 {
     public bool HasArt => !string.IsNullOrEmpty(ArtPath) && File.Exists(ArtPath);
 
@@ -87,6 +87,7 @@ public sealed class CheatLibrary
                 table.Description,
                 table.Developer,
                 table.ReleaseDate,
+                table.Genres,
                 GameMetadataService.ArtFileFor(Path.GetFileNameWithoutExtension(path)),
                 table.Notes));
         }

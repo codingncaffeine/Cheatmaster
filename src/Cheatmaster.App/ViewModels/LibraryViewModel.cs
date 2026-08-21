@@ -109,7 +109,39 @@ public sealed class LibraryGameRow : ObservableObject
     public string Description => Entry.Description;
     public string ExecutableName => Entry.ExecutableName;
     public string ReleaseDate => Entry.ReleaseDate;
+    public string Genres => Entry.Genres;
     public string ModifiedText => Entry.Modified.LocalDateTime.ToString("d MMM yyyy");
+
+    /// <summary>Who made it, when, and what it is — as one line, skipping whatever is missing.</summary>
+    public string MetaLine
+    {
+        get
+        {
+            var parts = new List<string>(3);
+            if (!string.IsNullOrWhiteSpace(Entry.Developer)) parts.Add(Entry.Developer);
+
+            string year = Year(Entry.ReleaseDate);
+            if (year.Length > 0) parts.Add(year);
+
+            if (!string.IsNullOrWhiteSpace(Entry.Genres)) parts.Add(Entry.Genres);
+            return string.Join("  ·  ", parts);
+        }
+    }
+
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Entry.Description);
+
+    /// <summary>Store dates arrive as "2024-09-25" or "25 Sep, 2024"; only the year is wanted.</summary>
+    private static string Year(string released)
+    {
+        if (string.IsNullOrWhiteSpace(released)) return string.Empty;
+
+        foreach (var token in released.Split([' ', ',', '-', '/'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.Length == 4 && int.TryParse(token, out int year) && year is > 1970 and < 2100)
+                return token;
+        }
+        return string.Empty;
+    }
 
     public BitmapImage? Cover
     {
@@ -165,6 +197,9 @@ public sealed class LibraryGameRow : ObservableObject
         Raise(nameof(Description));
         Raise(nameof(CheatSummary));
         Raise(nameof(ReleaseDate));
+        Raise(nameof(Genres));
+        Raise(nameof(MetaLine));
+        Raise(nameof(HasDescription));
         Raise(nameof(Initials));
         Raise(nameof(Notes));
     }
@@ -465,9 +500,14 @@ public sealed class LibraryViewModel : ObservableObject
 
                 Post(() => Status = $"Looking up {table.GameName}…");
 
-                // Details already known and only the cover missing: that is the restored-backup
-                // case, and the stored store id turns it into one request instead of a search.
-                if (table.MetadataFetched && (table.SteamAppId > 0 || table.GogProductId > 0) &&
+                // Details already known AND current, with only the cover missing: that is the
+                // restored-backup case, and the stored id makes it one request instead of a
+                // search. A table written by an older lookup must NOT take this path, or it keeps
+                // its stale text forever while quietly succeeding at fetching the picture.
+                bool detailsAreCurrent = table.MetadataFetched &&
+                                         table.MetadataVersion >= CheatTable.CurrentMetadataVersion;
+
+                if (detailsAreCurrent && (table.SteamAppId > 0 || table.GogProductId > 0) &&
                     await _metadata.RestoreArtAsync(game.Key, table.SteamAppId, table.GogProductId).ConfigureAwait(false))
                 {
                     var restored = ToEntry(table, game.Entry.Path);
@@ -487,6 +527,7 @@ public sealed class LibraryViewModel : ObservableObject
                     table.Description = metadata.Description;
                     table.Developer = metadata.Developer;
                     table.ReleaseDate = metadata.ReleaseDate;
+                    table.Genres = metadata.Genres;
                     table.SteamAppId = metadata.SteamAppId;
                     table.GogProductId = metadata.GogProductId;
                     table.ArtPath = metadata.ArtPath;
@@ -542,6 +583,7 @@ public sealed class LibraryViewModel : ObservableObject
         table.Description,
         table.Developer,
         table.ReleaseDate,
+        table.Genres,
         GameMetadataService.ArtFileFor(Path.GetFileNameWithoutExtension(path)),
         table.Notes);
 

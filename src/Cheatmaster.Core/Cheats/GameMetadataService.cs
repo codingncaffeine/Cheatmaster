@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace Cheatmaster.Core.Cheats;
 
 public sealed record GameMetadata(string Provider, int SteamAppId, long GogProductId, string Name,
-    string Description, string Developer, string ReleaseDate, string ArtPath);
+    string Description, string Developer, string ReleaseDate, string Genres, string ArtPath);
 
 /// <summary>
 /// Finds a cover image and a description for a saved game, without an API key, an account, or a
@@ -87,7 +87,7 @@ public sealed partial class GameMetadataService
 
                 return new GameMetadata(found.Value.Provider, found.Value.SteamAppId, found.Value.GogProductId,
                     found.Value.Name, found.Value.Description, found.Value.Developer, found.Value.ReleaseDate,
-                    File.Exists(artPath) ? artPath : string.Empty);
+                    found.Value.Genres, File.Exists(artPath) ? artPath : string.Empty);
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or IOException)
@@ -99,7 +99,7 @@ public sealed partial class GameMetadataService
     }
 
     private readonly record struct Listing(string Provider, int SteamAppId, long GogProductId, string Name,
-        string Description, string Developer, string ReleaseDate, string[] ArtUrls);
+        string Description, string Developer, string ReleaseDate, string Genres, string[] ArtUrls);
 
     private static async Task<Listing?> LookUpAsync(GameIdentityHint hint, CancellationToken ct)
     {
@@ -165,8 +165,8 @@ public sealed partial class GameMetadataService
             Text(data, "header_image")
         ];
 
-        return new Listing("Steam", appId, 0, Text(data, "name"), Text(data, "short_description"),
-            developer, released, art);
+        return new Listing("Steam", appId, 0, Text(data, "name"), StripHtml(Text(data, "short_description")),
+            developer, released, JoinNames(data, "genres", "description"), art);
     }
 
     // ---------------------------------------------------------------- GOG
@@ -196,19 +196,65 @@ public sealed partial class GameMetadataService
 
             var listing = await GogDetailsAsync(id, ct).ConfigureAwait(false);
             if (listing is null) continue;
-
-            // The catalogue has a ready-made portrait cover and a developer; the details
-            // endpoint has neither.
-            var art = new List<string>();
-            string cover = Text(product, "coverVertical");
-            if (cover.Length > 0) art.Add(Normalize(cover));
-            art.AddRange(listing.Value.ArtUrls);
-
-            string developer = FirstOf(product, "developers");
-            return listing.Value with { ArtUrls = [.. art], Developer = developer };
+            return Enrich(listing.Value, product);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Folds in what only the catalogue carries: the genres, the developer, and a ready-made
+    /// portrait cover. The product endpoint has none of the three.
+    /// </summary>
+    private static Listing Enrich(Listing listing, JsonElement product)
+    {
+        var art = new List<string>();
+        string cover = Text(product, "coverVertical");
+        if (cover.Length > 0) art.Add(Normalize(cover));
+        art.AddRange(listing.ArtUrls);
+
+        string developer = FirstOf(product, "developers");
+        string genres = JoinNames(product, "genres", "name");
+
+        return listing with
+        {
+            ArtUrls = [.. art],
+            Developer = developer.Length > 0 ? developer : listing.Developer,
+            Genres = genres.Length > 0 ? genres : listing.Genres
+        };
+    }
+
+    /// <summary>
+    /// Looks a known product up in the catalogue by its title, to pick up the fields the product
+    /// endpoint does not return. Nothing here is worth failing a lookup over.
+    /// </summary>
+    private static async Task<Listing> EnrichFromCatalogAsync(Listing listing, CancellationToken ct)
+    {
+        if (listing.Name.Length == 0) return listing;
+
+        try
+        {
+            string url = "https://catalog.gog.com/v1/catalog?limit=5&query=" +
+                         Uri.EscapeDataString("like:" + listing.Name);
+
+            using var stream = await Http.GetStreamAsync(url, ct).ConfigureAwait(false);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+
+            if (!json.RootElement.TryGetProperty("products", out var products)) return listing;
+
+            foreach (var product in products.EnumerateArray())
+            {
+                if (!product.TryGetProperty("id", out var idElement)) continue;
+                if (!long.TryParse(idElement.GetString(), out long id) || id != listing.GogProductId) continue;
+                return Enrich(listing, product);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
+        {
+            // Keep what the product endpoint gave us.
+        }
+
+        return listing;
     }
 
     private static async Task<Listing?> GogDetailsAsync(long productId, CancellationToken ct)
@@ -240,35 +286,11 @@ public sealed partial class GameMetadataService
             if (background.Length > 0) art.Add(Normalize(background));
         }
 
-        string developer = await GogDeveloperAsync(productId, ct).ConfigureAwait(false);
-        return new Listing("GOG", 0, productId, title, description, developer, released, [.. art]);
+        var listing = new Listing("GOG", 0, productId, title, description, string.Empty, released, string.Empty, [.. art]);
+        return await EnrichFromCatalogAsync(listing, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// The product endpoint carries the blurb and the images but not who made it; that lives on
-    /// the newer games endpoint. Missing it is not worth failing the whole lookup over.
-    /// </summary>
-    private static async Task<string> GogDeveloperAsync(long productId, CancellationToken ct)
-    {
-        try
-        {
-            using var stream = await Http.GetStreamAsync($"https://api.gog.com/v2/games/{productId}", ct).ConfigureAwait(false);
-            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
-
-            if (!json.RootElement.TryGetProperty("_embedded", out var embedded)) return string.Empty;
-            if (!embedded.TryGetProperty("developers", out var developers) || developers.ValueKind != JsonValueKind.Array)
-                return string.Empty;
-
-            foreach (var developer in developers.EnumerateArray())
-                return Text(developer, "name");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
-        {
-            // A missing credit is not worth losing the cover for.
-        }
-
-        return string.Empty;
-    }
 
     /// <summary>
     /// GOG image URLs are a content hash plus a size suffix, so the portrait covers can be built
@@ -307,6 +329,22 @@ public sealed partial class GameMetadataService
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
             ? value.GetString() ?? string.Empty
             : string.Empty;
+
+    /// <summary>Flattens an array of objects into "A, B, C" using one named field from each.</summary>
+    private static string JoinNames(JsonElement element, string property, string field, int max = 3)
+    {
+        if (!element.TryGetProperty(property, out var array) || array.ValueKind != JsonValueKind.Array)
+            return string.Empty;
+
+        var names = new List<string>(max);
+        foreach (var item in array.EnumerateArray())
+        {
+            string name = Text(item, field);
+            if (name.Length > 0 && !names.Contains(name)) names.Add(name);
+            if (names.Count >= max) break;
+        }
+        return string.Join(", ", names);
+    }
 
     private static string FirstOf(JsonElement element, string property)
     {

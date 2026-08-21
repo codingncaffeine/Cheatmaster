@@ -134,18 +134,23 @@
                     <StackPanel Grid.Row="0" Margin="16,16,16,0">
                         <TextBlock Text="{Binding Selected.Name}" FontSize="17" FontWeight="SemiBold"
                                    TextWrapping="Wrap" />
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <TextBlock Text="{Binding Selected.Subtitle}" FontSize="11.5"
-                                       Foreground="{StaticResource TextMutedBrush}" />
-                            <TextBlock Text="{Binding Selected.ReleaseDate}" FontSize="11.5" Margin="10,0,0,0"
-                                       Foreground="{StaticResource TextFaintBrush}" />
-                        </StackPanel>
+
+                        <!-- who made it, when, and what kind of game it is -->
+                        <TextBlock Text="{Binding Selected.MetaLine}" Margin="0,5,0,0" FontSize="11.5"
+                                   TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}"
+                                   Visibility="{Binding Selected.MetaLine, Converter={StaticResource NotEmptyToVis}}" />
 
                         <TextBlock Text="{Binding Selected.Description}" Margin="0,12,0,0" TextWrapping="Wrap"
                                    FontSize="12" LineHeight="18" Foreground="{StaticResource TextMutedBrush}"
-                                   MaxHeight="140" TextTrimming="CharacterEllipsis" />
+                                   MaxHeight="150" TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding Selected.HasDescription, Converter={StaticResource BoolToVis}}" />
 
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" FontSize="11.5"
+                                   Foreground="{StaticResource TextFaintBrush}"
+                                   Visibility="{Binding Selected.HasDescription, Converter={StaticResource BoolToVisInverted}}"
+                                   Text="No store listing was found for this one. Find artwork tries again, and Set cover lets you pick your own." />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                             <TextBlock Text="{Binding Selected.ExecutableName}" FontSize="11"
                                        FontFamily="{StaticResource MonoFont}"
                                        Foreground="{StaticResource TextFaintBrush}" />
