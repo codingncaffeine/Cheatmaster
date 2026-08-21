@@ -648,7 +648,7 @@
                     <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="11"
                                Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" />
                     <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{StaticResource TextFaintBrush}" Text="Cheatmaster 0.1" />
+                               Foreground="{StaticResource TextFaintBrush}" Text="{Binding VersionText}" />
                 </Grid>
             </Border>
         </Grid>

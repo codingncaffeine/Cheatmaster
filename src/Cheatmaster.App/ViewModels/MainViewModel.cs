@@ -418,6 +418,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
     public bool ShowElevationHint => !Privileges.IsElevated;
 
+    public string VersionText =>
+        "Cheatmaster " + (System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.4");
+
     private LazyResultList? _results;
     public LazyResultList? Results
     {

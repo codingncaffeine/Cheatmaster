@@ -452,6 +452,7 @@ public sealed class LibraryViewModel : ObservableObject
                 // A game only counts as done when it has both its details and its cover. On a
                 // second machine the details arrive through the backup but the cover does not,
                 // and that has to be noticed.
+                if (table.MetadataVersion < CheatTable.CurrentMetadataVersion) { pending.Add(game); continue; }
                 if (table.MetadataFetched && File.Exists(GameMetadataService.ArtFileFor(game.Key))) continue;
                 if (table.MetadataAttempts >= GiveUpAfter) continue;
                 pending.Add(game);
@@ -490,6 +491,7 @@ public sealed class LibraryViewModel : ObservableObject
                     table.GogProductId = metadata.GogProductId;
                     table.ArtPath = metadata.ArtPath;
                     table.MetadataFetched = true;
+                    table.MetadataVersion = CheatTable.CurrentMetadataVersion;
                     found++;
                 }
                 else

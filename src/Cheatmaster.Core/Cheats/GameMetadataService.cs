@@ -171,9 +171,18 @@ public sealed partial class GameMetadataService
 
     // ---------------------------------------------------------------- GOG
 
+    /// <summary>
+    /// Searches the GOG catalogue.
+    ///
+    /// The older embed.gog.com endpoint only searches an account's own library and returns
+    /// nothing for a general query, so this uses the catalogue service and then reads the full
+    /// listing by id, which keeps one path for images and descriptions.
+    /// </summary>
     private static async Task<Listing?> GogSearchAsync(string term, CancellationToken ct)
     {
-        string url = "https://embed.gog.com/games/ajax/filtered?mediaType=game&search=" + Uri.EscapeDataString(term);
+        string url = "https://catalog.gog.com/v1/catalog?limit=5&query=" +
+                     Uri.EscapeDataString("like:" + term);
+
         using var stream = await Http.GetStreamAsync(url, ct).ConfigureAwait(false);
         using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
 
@@ -181,19 +190,22 @@ public sealed partial class GameMetadataService
 
         foreach (var product in products.EnumerateArray())
         {
-            long id = product.TryGetProperty("id", out var idElement) && idElement.TryGetInt64(out long parsed) ? parsed : 0;
-            string title = Text(product, "title");
-            string image = Text(product, "image");
-            string developer = Text(product, "developer");
+            // The catalogue reports ids as strings.
+            if (!product.TryGetProperty("id", out var idElement)) continue;
+            if (!long.TryParse(idElement.GetString(), out long id) || id <= 0) continue;
 
-            string[] art = image.Length > 0
-                ? [BuildGogCard(image), "https:" + image + ".jpg"]
-                : [];
+            var listing = await GogDetailsAsync(id, ct).ConfigureAwait(false);
+            if (listing is null) continue;
 
-            // The search result already carries everything except a blurb, so ask for that only
-            // if it is cheap to get.
-            string description = id > 0 ? await GogDescriptionAsync(id, ct).ConfigureAwait(false) : string.Empty;
-            return new Listing("GOG", 0, id, title, description, developer, string.Empty, art);
+            // The catalogue has a ready-made portrait cover and a developer; the details
+            // endpoint has neither.
+            var art = new List<string>();
+            string cover = Text(product, "coverVertical");
+            if (cover.Length > 0) art.Add(Normalize(cover));
+            art.AddRange(listing.Value.ArtUrls);
+
+            string developer = FirstOf(product, "developers");
+            return listing.Value with { ArtUrls = [.. art], Developer = developer };
         }
 
         return null;
@@ -221,42 +233,72 @@ public sealed partial class GameMetadataService
         {
             string logo = Text(images, "logo2x");
             if (logo.Length == 0) logo = Text(images, "logo");
-            if (logo.Length > 0)
-            {
-                string card = BuildGogCard(logo);
-                if (card.Length > 0) art.Add(card);
-            }
+            art.AddRange(BuildGogCovers(logo));
 
+            // Landscape, and the last thing worth falling back to.
             string background = Text(images, "background");
-            if (background.Length > 0) art.Add("https:" + background + ".jpg");
+            if (background.Length > 0) art.Add(Normalize(background));
         }
 
-        return new Listing("GOG", 0, productId, title, description, string.Empty, released, [.. art]);
-    }
-
-    private static async Task<string> GogDescriptionAsync(long productId, CancellationToken ct)
-    {
-        try
-        {
-            var listing = await GogDetailsAsync(productId, ct).ConfigureAwait(false);
-            return listing?.Description ?? string.Empty;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
-        {
-            return string.Empty;
-        }
+        string developer = await GogDeveloperAsync(productId, ct).ConfigureAwait(false);
+        return new Listing("GOG", 0, productId, title, description, developer, released, [.. art]);
     }
 
     /// <summary>
-    /// GOG image URLs are a content hash plus a size suffix, so the tall store card can be built
-    /// from any other image for the same product.
+    /// The product endpoint carries the blurb and the images but not who made it; that lives on
+    /// the newer games endpoint. Missing it is not worth failing the whole lookup over.
     /// </summary>
-    private static string BuildGogCard(string imageUrl)
+    private static async Task<string> GogDeveloperAsync(long productId, CancellationToken ct)
     {
+        try
+        {
+            using var stream = await Http.GetStreamAsync($"https://api.gog.com/v2/games/{productId}", ct).ConfigureAwait(false);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+
+            if (!json.RootElement.TryGetProperty("_embedded", out var embedded)) return string.Empty;
+            if (!embedded.TryGetProperty("developers", out var developers) || developers.ValueKind != JsonValueKind.Array)
+                return string.Empty;
+
+            foreach (var developer in developers.EnumerateArray())
+                return Text(developer, "name");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
+        {
+            // A missing credit is not worth losing the cover for.
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// GOG image URLs are a content hash plus a size suffix, so the portrait covers can be built
+    /// from any other image for the same product. The host varies — images-1..4.gog-statics.com
+    /// and the older images.gog.com all appear — so only the hash is taken from the URL.
+    /// </summary>
+    internal static List<string> BuildGogCovers(string imageUrl)
+    {
+        var covers = new List<string>();
         var match = GogHashPattern().Match(imageUrl);
-        return match.Success
-            ? $"https://images.gog.com/{match.Groups[1].Value}_product_card_v2_mobile_slider_639.jpg"
-            : string.Empty;
+        if (!match.Success) return covers;
+
+        string hash = match.Groups[1].Value;
+        covers.Add($"https://images.gog-statics.com/{hash}_glx_vertical_cover.jpg");
+        covers.Add($"https://images.gog-statics.com/{hash}_product_card_v2_mobile_slider_639.jpg");
+        return covers;
+    }
+
+    /// <summary>
+    /// Makes a GOG image URL fetchable: some are protocol-relative, and some already carry an
+    /// extension while others do not.
+    /// </summary>
+    internal static string Normalize(string url)
+    {
+        if (url.Length == 0) return string.Empty;
+        if (url.StartsWith("//", StringComparison.Ordinal)) url = "https:" + url;
+
+        int lastSlash = url.LastIndexOf('/');
+        bool hasExtension = lastSlash >= 0 && url.IndexOf('.', lastSlash) > lastSlash;
+        return hasExtension ? url : url + ".jpg";
     }
 
     // ---------------------------------------------------------------- shared
@@ -276,8 +318,21 @@ public sealed partial class GameMetadataService
         return string.Empty;
     }
 
-    private static string StripHtml(string html) =>
-        string.IsNullOrEmpty(html) ? string.Empty : HtmlTagPattern().Replace(html, string.Empty).Trim();
+    /// <summary>
+    /// Turns a store blurb into plain prose. Tags are only half the job: these descriptions are
+    /// full of entities like &amp;nbsp; and layout whitespace, which show up verbatim as
+    /// gibberish if only the angle brackets are removed.
+    /// </summary>
+    internal static string StripHtml(string html)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+
+        string text = HtmlTagPattern().Replace(html, " ");
+        text = System.Net.WebUtility.HtmlDecode(text);
+        text = text.Replace(' ', ' ');            // decoded &nbsp;
+        text = WhitespaceRunPattern().Replace(text, " ");
+        return text.Trim();
+    }
 
     /// <summary>Downloads the first candidate that works, re-encoded to the size the app draws.</summary>
     public static async Task<bool> DownloadArtAsync(string[] candidates, string destination,
@@ -345,9 +400,14 @@ public sealed partial class GameMetadataService
         }
     }
 
-    [GeneratedRegex(@"images\.gog\.com/([0-9a-f]{16,})")]
+    // Host-agnostic on purpose: GOG serves from images.gog.com, images.gog-statics.com and
+    // images-1..4.gog-statics.com, and only the content hash is stable across them.
+    [GeneratedRegex(@"([0-9a-f]{32,})")]
     private static partial Regex GogHashPattern();
 
     [GeneratedRegex(@"<[^>]+>")]
     private static partial Regex HtmlTagPattern();
+
+    [GeneratedRegex(@"\s{2,}")]
+    private static partial Regex WhitespaceRunPattern();
 }

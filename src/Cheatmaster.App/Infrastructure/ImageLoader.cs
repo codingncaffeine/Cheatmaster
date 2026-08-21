@@ -6,8 +6,13 @@ namespace Cheatmaster.App.Infrastructure;
 public static class ImageLoader
 {
     /// <summary>
-    /// Loads a bitmap without holding the file open and without going through the URI cache,
+    /// Loads a bitmap without holding the file open and without going through WPF's image cache,
     /// so replacing a cover on disk actually shows the new one.
+    ///
+    /// Deliberately does NOT set BitmapCreateOptions.IgnoreImageCache. That flag exists to defeat
+    /// the cache WPF keys by URI, and setting it alongside a StreamSource throws
+    /// ArgumentNullException("key") because there is no URI to key on — which reads as "the file
+    /// simply would not load". Reading through a stream bypasses that cache anyway.
     /// </summary>
     public static BitmapImage? Load(string? path, int decodeWidth = 0)
     {
@@ -19,7 +24,6 @@ public static class ImageLoader
             var image = new BitmapImage();
             image.BeginInit();
             image.CacheOption = BitmapCacheOption.OnLoad;
-            image.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
             if (decodeWidth > 0) image.DecodePixelWidth = decodeWidth;
             image.StreamSource = stream;
             image.EndInit();

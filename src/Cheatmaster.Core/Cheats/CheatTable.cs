@@ -76,6 +76,9 @@ public sealed class CheatTable
     public const int CurrentFormatVersion = 1;
     public const string FileExtension = ".cmt";
 
+    /// <summary>Bumped when the lookup itself improves, so existing tables refresh once instead of keeping stale text.</summary>
+    public const int CurrentMetadataVersion = 2;
+
     public int FormatVersion { get; set; } = CurrentFormatVersion;
     public string GameName { get; set; } = string.Empty;
     public string ExecutableName { get; set; } = string.Empty;
@@ -107,6 +110,8 @@ public sealed class CheatTable
 
     /// <summary>Failed attempts so far. Automatic lookup gives up after a few; the button always retries.</summary>
     public int MetadataAttempts { get; set; }
+
+    public int MetadataVersion { get; set; }
     public DateTimeOffset Created { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset Modified { get; set; } = DateTimeOffset.Now;
     public List<CheatEntry> Entries { get; set; } = [];

@@ -13,7 +13,7 @@
          CultureInfo.CreateSpecificCulture, which throws in invariant mode. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <SelfContained>false</SelfContained>
-    <Version>0.1.0</Version>
+    <Version>0.0.4</Version>
     <Product>Cheatmaster</Product>
     <Company>codingncaffeine</Company>
     <Copyright>Copyright (C) 2026 codingncaffeine</Copyright>
