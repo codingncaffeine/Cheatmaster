@@ -24,10 +24,16 @@ public sealed partial class GameMetadataService
     public static readonly TimeSpan LookupBudget = TimeSpan.FromSeconds(25);
 
     private readonly string _artDirectory;
+    private readonly Func<byte[], byte[]>? _optimize;
 
-    public GameMetadataService(string? artDirectory = null)
+    /// <param name="optimizeArt">
+    /// Optional re-encoder applied to a downloaded cover before it is cached. Supplied by the UI
+    /// layer, which has an imaging stack; the engine keeps none of its own.
+    /// </param>
+    public GameMetadataService(string? artDirectory = null, Func<byte[], byte[]>? optimizeArt = null)
     {
         _artDirectory = artDirectory ?? DefaultArtDirectory;
+        _optimize = optimizeArt;
         Directory.CreateDirectory(_artDirectory);
     }
 
@@ -77,7 +83,7 @@ public sealed partial class GameMetadataService
 
                 string artPath = ArtPathFor(fingerprint.Key);
                 if (!File.Exists(artPath))
-                    await DownloadArtAsync(found.Value.ArtUrls, artPath, token).ConfigureAwait(false);
+                    await DownloadArtAsync(found.Value.ArtUrls, artPath, _optimize, token).ConfigureAwait(false);
 
                 return new GameMetadata(found.Value.Provider, found.Value.SteamAppId, found.Value.GogProductId,
                     found.Value.Name, found.Value.Description, found.Value.Developer, found.Value.ReleaseDate,
@@ -273,7 +279,9 @@ public sealed partial class GameMetadataService
     private static string StripHtml(string html) =>
         string.IsNullOrEmpty(html) ? string.Empty : HtmlTagPattern().Replace(html, string.Empty).Trim();
 
-    private static async Task DownloadArtAsync(string[] candidates, string destination, CancellationToken ct)
+    /// <summary>Downloads the first candidate that works, re-encoded to the size the app draws.</summary>
+    public static async Task<bool> DownloadArtAsync(string[] candidates, string destination,
+        Func<byte[], byte[]>? optimize, CancellationToken ct)
     {
         foreach (string url in candidates)
         {
@@ -288,15 +296,52 @@ public sealed partial class GameMetadataService
                 byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
                 if (bytes.Length < 512) continue;
 
+                if (optimize is not null) bytes = optimize(bytes);
+
+                string? directory = Path.GetDirectoryName(destination);
+                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
                 string temporary = destination + ".tmp";
                 await File.WriteAllBytesAsync(temporary, bytes, ct).ConfigureAwait(false);
                 File.Move(temporary, destination, overwrite: true);
-                return;
+                return true;
             }
             catch (Exception ex) when (ex is HttpRequestException or IOException)
             {
                 // Try the next candidate.
             }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Re-downloads just the cover for a game whose store identity is already known. This is how
+    /// a second machine gets its artwork back without any of it having to travel through the
+    /// backup repository.
+    /// </summary>
+    public async Task<bool> RestoreArtAsync(string key, int steamAppId, long gogProductId, CancellationToken ct = default)
+    {
+        string destination = ArtPathFor(key);
+        if (File.Exists(destination)) return true;
+
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(LookupBudget);
+
+        try
+        {
+            Listing? listing = steamAppId > 0
+                ? await SteamDetailsAsync(steamAppId, budget.Token).ConfigureAwait(false)
+                : gogProductId > 0
+                    ? await GogDetailsAsync(gogProductId, budget.Token).ConfigureAwait(false)
+                    : null;
+
+            if (listing is null) return false;
+            return await DownloadArtAsync(listing.Value.ArtUrls, destination, _optimize, budget.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or IOException)
+        {
+            return false;
         }
     }
 

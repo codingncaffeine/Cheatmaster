@@ -173,7 +173,25 @@ public sealed class GitHubSyncService
 
     // ---------------------------------------------------------------- sync
 
-    private readonly record struct RemoteFile(string Sha, DateTimeOffset Modified, long Size);
+    private readonly record struct RemoteFile(string Hash, DateTimeOffset Modified, long Size);
+
+    /// <summary>
+    /// Content hash of a local file. Uploading is decided on content, never on timestamps
+    /// alone: git stores every version it is handed and never lets one go, so re-uploading
+    /// bytes that did not change grows the repository permanently for nothing.
+    /// </summary>
+    private static string HashOf(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))[..32];
+        }
+        catch (IOException)
+        {
+            return string.Empty;
+        }
+    }
 
     public async Task<SyncOutcome> SyncAsync(IProgress<string>? progress = null, CancellationToken ct = default)
     {
@@ -195,11 +213,16 @@ public sealed class GitHubSyncService
         {
             ct.ThrowIfCancellationRequested();
             var localModified = ModifiedOf(remotePath, localPath);
+            string localHash = HashOf(localPath);
 
-            if (manifest.TryGetValue(remotePath, out var remote) && remote.Modified >= localModified)
+            if (manifest.TryGetValue(remotePath, out var remote))
             {
-                unchanged++;
-                continue;
+                bool sameContent = remote.Hash.Length > 0 && remote.Hash == localHash;
+                if (sameContent || remote.Modified >= localModified)
+                {
+                    unchanged++;
+                    continue;
+                }
             }
 
             progress?.Report("Uploading " + Path.GetFileName(localPath));
@@ -207,7 +230,7 @@ public sealed class GitHubSyncService
             await UploadAsync(remotePath, await File.ReadAllBytesAsync(localPath, ct).ConfigureAwait(false), sha, ct)
                 .ConfigureAwait(false);
 
-            manifest[remotePath] = new RemoteFile(string.Empty, localModified, new FileInfo(localPath).Length);
+            manifest[remotePath] = new RemoteFile(localHash, localModified, new FileInfo(localPath).Length);
             manifestChanged = true;
             uploaded++;
         }
@@ -221,7 +244,11 @@ public sealed class GitHubSyncService
             string localPath = LocalPathFor(remotePath);
             if (localPath.Length == 0) continue;
 
-            if (File.Exists(localPath) && ModifiedOf(remotePath, localPath) >= remote.Modified) continue;
+            if (File.Exists(localPath))
+            {
+                if (remote.Hash.Length > 0 && HashOf(localPath) == remote.Hash) continue;
+                if (ModifiedOf(remotePath, localPath) >= remote.Modified) continue;
+            }
 
             progress?.Report("Downloading " + Path.GetFileName(localPath));
             byte[]? bytes = await DownloadAsync(remotePath, ct).ConfigureAwait(false);
@@ -260,22 +287,32 @@ public sealed class GitHubSyncService
         return new DateTimeOffset(File.GetLastWriteTimeUtc(localPath), TimeSpan.Zero);
     }
 
+    /// <summary>
+    /// What is worth backing up.
+    ///
+    /// Every cheat table goes, always. Covers are another matter: git keeps every version of
+    /// every blob forever, so uploading an automatic cover costs repository space permanently
+    /// in exchange for something the other machine can fetch again from the store IDs already
+    /// recorded in the table. Only covers the user chose by hand are irreplaceable, so only
+    /// those are backed up.
+    /// </summary>
     private static List<(string RemotePath, string LocalPath)> EnumerateLocalFiles()
     {
         var files = new List<(string, string)>();
 
         string tables = CheatLibrary.DefaultRoot;
-        if (Directory.Exists(tables))
-        {
-            foreach (string path in Directory.EnumerateFiles(tables, "*" + CheatTable.FileExtension))
-                files.Add(("tables/" + Path.GetFileName(path), path));
-        }
+        if (!Directory.Exists(tables)) return files;
 
-        string art = GameMetadataService.DefaultArtDirectory;
-        if (Directory.Exists(art))
+        foreach (string path in Directory.EnumerateFiles(tables, "*" + CheatTable.FileExtension))
         {
-            foreach (string path in Directory.EnumerateFiles(art, "*.jpg"))
-                files.Add(("art/" + Path.GetFileName(path), path));
+            files.Add(("tables/" + Path.GetFileName(path), path));
+
+            var table = CheatTable.Load(path);
+            if (table is null || !table.ArtIsCustom) continue;
+
+            string key = Path.GetFileNameWithoutExtension(path);
+            string art = GameMetadataService.ArtFileFor(key);
+            if (File.Exists(art)) files.Add(("art/" + Path.GetFileName(art), art));
         }
 
         return files;
@@ -359,7 +396,8 @@ public sealed class GitHubSyncService
                     ? parsed
                     : DateTimeOffset.MinValue;
                 long size = value.TryGetProperty("n", out var n) && n.TryGetInt64(out long parsedSize) ? parsedSize : 0;
-                manifest[entry.Name] = new RemoteFile(string.Empty, modified, size);
+                string hash = value.TryGetProperty("h", out var h) ? h.GetString() ?? string.Empty : string.Empty;
+                manifest[entry.Name] = new RemoteFile(hash, modified, size);
             }
         }
         catch (JsonException)
@@ -376,7 +414,7 @@ public sealed class GitHubSyncService
         foreach (var (path, file) in manifest)
         {
             if (path == ManifestPath) continue;
-            files[path] = new { m = file.Modified.UtcDateTime.ToString("O"), n = file.Size };
+            files[path] = new { m = file.Modified.UtcDateTime.ToString("O"), n = file.Size, h = file.Hash };
         }
 
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(

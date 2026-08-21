@@ -61,6 +61,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         PinInterpretationCommand = new RelayCommand(o => PinInterpretation(o as InterpretationChip));
         KeepOnlyCommand = new RelayCommand(o => KeepOnly(o as InterpretationChip));
         FreezeSelectedCommand = new RelayCommand(o => FreezeSelected(o as IList));
+        SetValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: false));
+        FreezeAtValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: true));
         ShowScannerCommand = new RelayCommand(() => IsLibraryView = false);
         ShowLibraryCommand = new RelayCommand(() => IsLibraryView = true);
 
@@ -130,7 +132,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         try
         {
-            var metadata = await new GameMetadataService().FetchAsync(fingerprint);
+            var metadata = await new GameMetadataService(null, Services.CoverOptimizer.Shrink).FetchAsync(fingerprint);
             if (table != _table) return;   // attached elsewhere while we were waiting
 
             table.MetadataFetched = true;
@@ -141,6 +143,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
                 table.Developer = metadata.Developer;
                 table.ReleaseDate = metadata.ReleaseDate;
                 table.SteamAppId = metadata.SteamAppId;
+                table.GogProductId = metadata.GogProductId;
                 table.ArtPath = metadata.ArtPath;
                 GameName = table.GameName;
             }
@@ -494,6 +497,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     public RelayCommand PinInterpretationCommand { get; }
     public RelayCommand KeepOnlyCommand { get; }
     public RelayCommand FreezeSelectedCommand { get; }
+    public RelayCommand SetValueCommand { get; }
+    public RelayCommand FreezeAtValueCommand { get; }
 
     private bool CanScan => IsAttached && !IsScanning &&
         (!NeedsValue || UserValue.Parse(ValueText).IsValid) &&
@@ -994,17 +999,104 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         CheatsChanged();
     }
 
+    /// <summary>
+    /// Set from the view so bulk edits can ask for a value. A callback rather than a window
+    /// reference, so the view model never opens a window itself.
+    /// </summary>
+    public Func<string, string, string, string?>? PromptForValue { get; set; }
+
+    /// <summary>Every entry held. Reads false while any one of them is loose.</summary>
+    public bool FreezeAll
+    {
+        get => Cheats.Count > 0 && Cheats.All(static c => c.Frozen);
+        set
+        {
+            if (Cheats.Count == 0) return;
+            foreach (var row in Cheats) row.SetFrozen(value, notifyHost: false);
+            CheatsChanged();
+            Status = value
+                ? $"Holding all {Cheats.Count} value{(Cheats.Count == 1 ? "" : "s")}."
+                : "Released every value.";
+        }
+    }
+
     private void FreezeSelected(IList? selection)
     {
-        if (selection is null) return;
-        bool anyUnfrozen = selection.OfType<CheatRow>().Any(r => !r.Frozen);
-        foreach (var row in selection.OfType<CheatRow>()) row.Frozen = anyUnfrozen;
+        var rows = Rows(selection);
+        if (rows.Count == 0)
+        {
+            Notify("Select one or more entries first.", NoticeKind.Info);
+            return;
+        }
+
+        // Mixed selection freezes; an all-frozen selection releases.
+        bool freeze = rows.Any(static r => !r.Frozen);
+        foreach (var row in rows) row.SetFrozen(freeze, notifyHost: false);
+        CheatsChanged();
+
+        Status = freeze
+            ? $"Holding {rows.Count} value{(rows.Count == 1 ? "" : "s")}."
+            : $"Released {rows.Count} value{(rows.Count == 1 ? "" : "s")}.";
+    }
+
+    /// <summary>Writes one value into every selected entry, optionally holding them there.</summary>
+    private void SetValueForSelected(object? parameter, bool alsoFreeze)
+    {
+        var rows = Rows(parameter as IList);
+        if (rows.Count == 0)
+        {
+            Notify("Select one or more entries first.", NoticeKind.Info);
+            return;
+        }
+
+        if (Process is null)
+        {
+            Notify("Attach to a process before editing values.", NoticeKind.Warning);
+            return;
+        }
+
+        string message = rows.Count == 1
+            ? $"Write this value to {rows[0].Description}:"
+            : $"Write this value to all {rows.Count} selected entries:";
+
+        string? input = PromptForValue?.Invoke(alsoFreeze ? "Freeze at value" : "Set value", message, rows[0].ValueText);
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        int written = 0;
+        foreach (var row in rows)
+        {
+            if (!row.TrySetValue(input)) continue;
+            written++;
+            if (alsoFreeze) row.SetFrozen(true, notifyHost: false);
+        }
+
+        CheatsChanged();
+
+        if (written == 0)
+            Notify("None of the selected addresses could be written.", NoticeKind.Error);
+        else if (written < rows.Count)
+            Notify($"Wrote {input} to {written} of {rows.Count} entries; the rest refused.", NoticeKind.Warning);
+        else
+            Notify($"Wrote {input} to {written} entr{(written == 1 ? "y" : "ies")}.", NoticeKind.Success);
+    }
+
+    private static List<CheatRow> Rows(IList? selection)
+    {
+        var rows = new List<CheatRow>();
+        if (selection is null) return rows;
+
+        foreach (object? item in selection)
+        {
+            if (item is CheatRow row) rows.Add(row);
+        }
+        return rows;
     }
 
     public void CheatsChanged()
     {
         PushFreezeSet();
         Raise(nameof(FreezeStatus));
+        Raise(nameof(FreezeAll));
         CheatSetChanged?.Invoke();
         ClearCheatsCommand.RaiseCanExecuteChanged();
         ExportTableCommand.RaiseCanExecuteChanged();
@@ -1152,6 +1244,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         }
 
         Raise(nameof(FreezeStatus));
+        Raise(nameof(FreezeAll));
     }
 
     public void Dispose()

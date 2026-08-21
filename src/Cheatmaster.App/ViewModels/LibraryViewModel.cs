@@ -103,7 +103,7 @@ public sealed class LibraryGameRow : ObservableObject
 public sealed class LibraryViewModel : ObservableObject
 {
     private readonly CheatLibrary _library;
-    private readonly GameMetadataService _metadata = new();
+    private readonly GameMetadataService _metadata = new(null, Services.CoverOptimizer.Shrink);
     private readonly List<LibraryGameRow> _all = [];
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
 
@@ -276,7 +276,11 @@ public sealed class LibraryViewModel : ObservableObject
                 var table = CheatTable.Load(game.Entry.Path);
                 if (table is null) continue;
                 if (force) { pending.Add(game); continue; }
-                if (table.MetadataFetched || File.Exists(GameMetadataService.ArtFileFor(game.Key))) continue;
+
+                // A game only counts as done when it has both its details and its cover. On a
+                // second machine the details arrive through the backup but the cover does not,
+                // and that has to be noticed.
+                if (table.MetadataFetched && File.Exists(GameMetadataService.ArtFileFor(game.Key))) continue;
                 if (table.MetadataAttempts >= GiveUpAfter) continue;
                 pending.Add(game);
             }
@@ -287,6 +291,17 @@ public sealed class LibraryViewModel : ObservableObject
                 if (table is null) continue;
 
                 Post(() => Status = $"Looking up {table.GameName}…");
+
+                // Details already known and only the cover missing: that is the restored-backup
+                // case, and the stored store id turns it into one request instead of a search.
+                if (table.MetadataFetched && (table.SteamAppId > 0 || table.GogProductId > 0) &&
+                    await _metadata.RestoreArtAsync(game.Key, table.SteamAppId, table.GogProductId).ConfigureAwait(false))
+                {
+                    var restored = ToEntry(table, game.Entry.Path);
+                    Post(() => game.Update(restored));
+                    found++;
+                    continue;
+                }
 
                 var fingerprint = new GameFingerprint(table.ExecutableName, table.GameName, table.GameVersion,
                     table.ExecutableHash, table.ExecutablePath);
@@ -300,6 +315,7 @@ public sealed class LibraryViewModel : ObservableObject
                     table.Developer = metadata.Developer;
                     table.ReleaseDate = metadata.ReleaseDate;
                     table.SteamAppId = metadata.SteamAppId;
+                    table.GogProductId = metadata.GogProductId;
                     table.ArtPath = metadata.ArtPath;
                     table.MetadataFetched = true;
                     found++;
@@ -430,6 +446,8 @@ public sealed class LibraryViewModel : ObservableObject
             {
                 table.ArtPath = destination;
                 table.MetadataFetched = true;
+                // Hand-picked covers cannot be fetched again, so these are the ones worth backing up.
+                table.ArtIsCustom = true;
                 table.Save(Selected.Entry.Path);
                 Selected.Update(ToEntry(table, Selected.Entry.Path));
             }

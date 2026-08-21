@@ -498,6 +498,14 @@
                                                Foreground="{StaticResource TextFaintBrush}" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <CheckBox Content="Freeze all" IsChecked="{Binding FreezeAll}"
+                                              VerticalAlignment="Center" Margin="0,0,14,0"
+                                              ToolTip="Hold every value in this table where it is" />
+                                    <Button Content="Set value…" Style="{StaticResource GhostButton}" Padding="10,4"
+                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
+                                            Command="{Binding SetValueCommand}"
+                                            CommandParameter="{Binding SelectedItems, ElementName=CheatsGrid}"
+                                            ToolTip="Write one value into every selected entry" />
                                     <Button Content="Freeze" Style="{StaticResource GhostButton}" Padding="10,4"
                                             MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
                                             Command="{Binding FreezeSelectedCommand}"
@@ -522,6 +530,27 @@
 
                             <DataGrid x:Name="CheatsGrid" Grid.Row="1" ItemsSource="{Binding Cheats}"
                                       SelectionMode="Extended" CanUserSortColumns="False" IsReadOnly="False">
+                                <DataGrid.ContextMenu>
+                                    <!-- PlacementTarget, because a context menu cannot see ElementName. -->
+                                    <ContextMenu DataContext="{Binding PlacementTarget, RelativeSource={RelativeSource Self}}">
+                                        <MenuItem Header="Set value…"
+                                                  Command="{Binding DataContext.SetValueCommand}"
+                                                  CommandParameter="{Binding SelectedItems}" />
+                                        <MenuItem Header="Freeze at value…"
+                                                  Command="{Binding DataContext.FreezeAtValueCommand}"
+                                                  CommandParameter="{Binding SelectedItems}" />
+                                        <MenuItem Header="Freeze / release"
+                                                  Command="{Binding DataContext.FreezeSelectedCommand}"
+                                                  CommandParameter="{Binding SelectedItems}" />
+                                        <Separator />
+                                        <MenuItem Header="Select all" InputGestureText="Ctrl+A" Click="OnSelectAllCheats" />
+                                        <MenuItem Header="Copy address" Click="OnCopyCheatAddress" />
+                                        <Separator />
+                                        <MenuItem Header="Remove"
+                                                  Command="{Binding DataContext.RemoveCheatCommand}"
+                                                  CommandParameter="{Binding SelectedItems}" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
                                 <DataGrid.Columns>
                                     <DataGridTemplateColumn Header="Freeze" Width="62" IsReadOnly="True">
                                         <DataGridTemplateColumn.CellTemplate>

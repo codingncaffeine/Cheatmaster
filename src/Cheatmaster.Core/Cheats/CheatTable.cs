@@ -92,6 +92,14 @@ public sealed class CheatTable
     public string Developer { get; set; } = string.Empty;
     public string ReleaseDate { get; set; } = string.Empty;
     public int SteamAppId { get; set; }
+    public long GogProductId { get; set; }
+
+    /// <summary>
+    /// True when the user chose this cover themselves. Only these are worth backing up: an
+    /// automatic cover can be fetched again for free from the store IDs above, and every copy
+    /// pushed to git is kept forever.
+    /// </summary>
+    public bool ArtIsCustom { get; set; }
     public string ArtPath { get; set; } = string.Empty;
 
     /// <summary>Set once a lookup has been attempted, so a game with no listing is not retried forever.</summary>

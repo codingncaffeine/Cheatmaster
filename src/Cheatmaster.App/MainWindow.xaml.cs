@@ -35,6 +35,9 @@ public partial class MainWindow : Window
 
         _viewModel.AttachRequested += ShowProcessPicker;
         _viewModel.CheatSetChanged += SyncHotkeys;
+        _viewModel.PromptForValue = (title, message, initial) =>
+            ValuePromptWindow.Ask(this, title, message, initial,
+                "Accepts decimals and hex (0x1F). Each entry is written using its own storage type.");
         _hotkeys.Pressed += OnHotkeyPressed;
 
         SourceInitialized += (_, _) =>
@@ -147,6 +150,27 @@ public partial class MainWindow : Window
         foreach (object? item in ResultsGrid.SelectedItems)
         {
             if (item is ResultRow row) text.AppendLine(row.AddressText);
+        }
+
+        if (text.Length == 0) return;
+        try
+        {
+            Clipboard.SetText(text.ToString().TrimEnd());
+        }
+        catch (Exception ex)
+        {
+            _viewModel.Notify("Could not copy: " + ex.Message, NoticeKind.Warning);
+        }
+    }
+
+    private void OnSelectAllCheats(object sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
+
+    private void OnCopyCheatAddress(object sender, RoutedEventArgs e)
+    {
+        var text = new StringBuilder();
+        foreach (object? item in CheatsGrid.SelectedItems)
+        {
+            if (item is CheatRow row) text.AppendLine(row.AddressText);
         }
 
         if (text.Length == 0) return;

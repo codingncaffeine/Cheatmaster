@@ -58,19 +58,25 @@ public sealed class CheatRow : ObservableObject
     public bool Frozen
     {
         get => Entry.Frozen;
-        set
-        {
-            if (Entry.Frozen == value) return;
-            Entry.Frozen = value;
+        set => SetFrozen(value, notifyHost: true);
+    }
 
-            // Freezing with no target value pins whatever is on screen right now.
-            if (value && string.IsNullOrWhiteSpace(Entry.FreezeValue))
-                Entry.FreezeValue = _valueText == "—" ? "0" : _valueText;
+    /// <summary>
+    /// Freezes or thaws this entry. Bulk operations pass notifyHost false and tell the host once
+    /// at the end, so freezing two hundred rows is one save and one freeze-set rebuild.
+    /// </summary>
+    public void SetFrozen(bool value, bool notifyHost)
+    {
+        if (Entry.Frozen == value) return;
+        Entry.Frozen = value;
 
-            Raise();
-            Raise(nameof(FreezeValue));
-            _host.CheatsChanged();
-        }
+        // Freezing with no target value pins whatever is on screen right now.
+        if (value && string.IsNullOrWhiteSpace(Entry.FreezeValue))
+            Entry.FreezeValue = _valueText == "—" ? "0" : _valueText;
+
+        Raise(nameof(Frozen));
+        Raise(nameof(FreezeValue));
+        if (notifyHost) _host.CheatsChanged();
     }
 
     public string FreezeValue
@@ -117,32 +123,44 @@ public sealed class CheatRow : ObservableObject
         {
             if (_valueText == value) return;
 
-            var process = _host.Process;
-            if (process is null)
+            if (_host.Process is null)
             {
                 _host.Notify("Attach to a process before editing values.", NoticeKind.Warning);
                 Raise();
                 return;
             }
 
-            if (!Entry.TryWriteDisplayValue(process, value))
+            if (!TrySetValue(value))
             {
                 _host.Notify($"Could not write {value} to {AddressText}.", NoticeKind.Error);
                 Raise();
                 return;
             }
 
-            // A frozen entry would immediately overwrite the new value with the old one.
-            if (Entry.Frozen)
-            {
-                Entry.FreezeValue = value;
-                Raise(nameof(FreezeValue));
-                _host.CheatsChanged();
-            }
-
-            _valueText = value;
-            Raise();
+            if (Entry.Frozen) _host.CheatsChanged();
         }
+    }
+
+    /// <summary>
+    /// Writes a value into the target without raising a notice, for bulk edits that report once
+    /// at the end. Returns false when the value could not be written.
+    /// </summary>
+    public bool TrySetValue(string text)
+    {
+        var process = _host.Process;
+        if (process is null) return false;
+        if (!Entry.TryWriteDisplayValue(process, text)) return false;
+
+        // A frozen entry would immediately put the old value back.
+        if (Entry.Frozen)
+        {
+            Entry.FreezeValue = text;
+            Raise(nameof(FreezeValue));
+        }
+
+        _valueText = text;
+        Raise(nameof(ValueText));
+        return true;
     }
 
     public void Refresh(TargetProcess? process)
