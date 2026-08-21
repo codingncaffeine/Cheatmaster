@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Cheatmaster</AssemblyName>
+    <RootNamespace>Cheatmaster.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\cheatmaster.ico</ApplicationIcon>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cheatmaster.Core\Cheatmaster.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The window sets Icon explicitly: a WPF window does not reliably inherit the icon
+         embedded in the executable for its title bar and taskbar button. -->
+    <Resource Include="Assets\cheatmaster.ico" />
+    <Resource Include="Assets\logo.png" />
+  </ItemGroup>
+</Project>

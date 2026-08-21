@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cheatmaster.Core/Cheatmaster.Core.csproj" />
+    <Project Path="src/Cheatmaster.App/Cheatmaster.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cheatmaster.Core.Tests/Cheatmaster.Core.Tests.csproj" />
+  </Folder>
+</Solution>

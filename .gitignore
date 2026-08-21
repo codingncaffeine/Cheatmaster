@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+.idea/
+
+# Local-only notes, plans, captures
+local-notes/
+*.local.md
+
+# Tables / captures produced while testing
+*.cmt
+*.CT
+scratch/

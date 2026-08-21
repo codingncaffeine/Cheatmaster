@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- Do NOT turn on InvariantGlobalization: WPF resolves FrameworkElement.Language through
+         CultureInfo.CreateSpecificCulture, which throws in invariant mode. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SelfContained>false</SelfContained>
+    <Version>0.1.0</Version>
+    <Product>Cheatmaster</Product>
+    <Company>codingncaffeine</Company>
+    <Copyright>Copyright (C) 2026 codingncaffeine</Copyright>
+  </PropertyGroup>
+</Project>
