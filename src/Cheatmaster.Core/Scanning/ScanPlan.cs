@@ -154,7 +154,10 @@ public sealed class ScanPlan
     {
         var items = new List<ScanPlanItem>(interpretations.Length);
         var rejected = new List<int>();
-        var seenPoints = new HashSet<(int width, ulong bits)>();
+        // Keyed by type, not by width: two types of the same width can hold the same bytes for
+        // one value and still disagree later, because an unsigned counter that grows past the
+        // signed maximum reads as negative under its signed twin.
+        var seenPoints = new HashSet<(ScanType type, ulong bits)>();
         var seenRanges = new HashSet<(ScanType type, ulong lo, ulong hi)>();
 
         for (int i = 0; i < interpretations.Length; i++)
@@ -175,7 +178,7 @@ public sealed class ScanPlan
             if (lo == hi)
             {
                 // Two theories that reduce to the same byte pattern are the same scan.
-                if (!seenPoints.Add((interp.Type.Width(), lo)))
+                if (!seenPoints.Add((interp.Type, lo)))
                 {
                     rejected.Add(i);
                     continue;

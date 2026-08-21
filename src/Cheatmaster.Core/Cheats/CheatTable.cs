@@ -80,9 +80,22 @@ public sealed class CheatTable
     public string GameName { get; set; } = string.Empty;
     public string ExecutableName { get; set; } = string.Empty;
     public string ExecutableHash { get; set; } = string.Empty;
+
+    /// <summary>Where the game was installed, which is how the store lookup identifies it exactly.</summary>
+    public string ExecutablePath { get; set; } = string.Empty;
     public string GameVersion { get; set; } = string.Empty;
     public string Author { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
+
+    /// <summary>Cover art and blurb, filled in once from the store listing and then left alone.</summary>
+    public string Description { get; set; } = string.Empty;
+    public string Developer { get; set; } = string.Empty;
+    public string ReleaseDate { get; set; } = string.Empty;
+    public int SteamAppId { get; set; }
+    public string ArtPath { get; set; } = string.Empty;
+
+    /// <summary>Set once a lookup has been attempted, so a game with no listing is not retried forever.</summary>
+    public bool MetadataFetched { get; set; }
     public DateTimeOffset Created { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset Modified { get; set; } = DateTimeOffset.Now;
     public List<CheatEntry> Entries { get; set; } = [];

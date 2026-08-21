@@ -53,6 +53,11 @@ public readonly struct UserValue
 
         bool hex = false;
         string body = s.Replace("_", string.Empty).Replace(" ", string.Empty);
+
+        // The sign comes before the radix prefix, so strip it first: -0x10 is a number people type.
+        bool negative = body.StartsWith('-');
+        if (negative || body.StartsWith('+')) body = body[1..];
+
         if (body.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
             hex = true;
@@ -66,8 +71,6 @@ public readonly struct UserValue
 
         if (hex)
         {
-            bool negative = body.StartsWith('-');
-            if (negative) body = body[1..];
             if (body.Length == 0 || body.Length > 16) return Invalid;
             if (!ulong.TryParse(body, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong raw)) return Invalid;
 
@@ -125,8 +128,10 @@ public readonly struct UserValue
         return mode switch
         {
             RoundingMode.Exact => (v, v),
-            // Half a step below covers round-to-nearest; a full step above covers truncation.
-            RoundingMode.Display => (v - ulp * 0.5, v + ulp),
+            // Half a step covers round-to-nearest. Truncation needs a full step, and it runs
+            // toward zero, so the extra slack belongs above a positive number and below a
+            // negative one: -82.67 displays as -82.
+            RoundingMode.Display => v >= 0 ? (v - ulp * 0.5, v + ulp) : (v - ulp, v + ulp * 0.5),
             _ => LooseWindow(v, ulp)
         };
 

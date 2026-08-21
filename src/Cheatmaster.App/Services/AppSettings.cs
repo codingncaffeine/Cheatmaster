@@ -19,6 +19,9 @@ public sealed class AppSettings
     public bool SkipExecutable { get; set; }
 
     public bool AutoSaveTables { get; set; } = true;
+
+    /// <summary>Look up cover art and a description for saved games from the public store listing.</summary>
+    public bool FetchArtwork { get; set; } = true;
     public bool AutoLoadTables { get; set; } = true;
     public bool LiveValues { get; set; } = true;
     public int MaxResultsPerInterpretation { get; set; } = 2_000_000;

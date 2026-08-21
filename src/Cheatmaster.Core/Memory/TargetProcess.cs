@@ -255,11 +255,17 @@ public sealed class TargetProcess : IDisposable
 
         int total = 0;
         int runStart = -1;
-        for (int offset = 0; offset < buffer.Length; offset += PageSize)
+        int offset = 0;
+        while (offset < buffer.Length)
         {
-            int len = Math.Min(PageSize, buffer.Length - offset);
-            bool ok = Read(address + (ulong)offset, buffer.Slice(offset, len)) == len;
-            if (ok)
+            // Step to the next page boundary first. Reading in fixed 4 KB strides from an
+            // address that is not page-aligned lets one unreadable page take the readable
+            // remainder of its predecessor down with it, which silently loses results near
+            // the end of a region.
+            int toBoundary = (int)(PageSize - ((address + (ulong)offset) & (PageSize - 1)));
+            int len = Math.Min(toBoundary, buffer.Length - offset);
+
+            if (Read(address + (ulong)offset, buffer.Slice(offset, len)) == len)
             {
                 if (runStart < 0) runStart = offset;
                 total += len;
@@ -269,6 +275,8 @@ public sealed class TargetProcess : IDisposable
                 runs.Add(new ValidRun(runStart, offset - runStart));
                 runStart = -1;
             }
+
+            offset += len;
         }
         if (runStart >= 0)
             runs.Add(new ValidRun(runStart, buffer.Length - runStart));
@@ -284,14 +292,47 @@ public sealed class TargetProcess : IDisposable
         {
             if (Win32.WriteProcessMemory(_handle, (nuint)address, p, (nuint)data.Length, out nuint written) && (int)written == data.Length)
                 return true;
+        }
 
-            // Read-only or copy-on-write page: lift protection, write, put it back.
-            if (!Win32.VirtualProtectEx(_handle, (nuint)address, (nuint)data.Length, PageProtect.ExecuteReadWrite, out uint old))
-                return false;
+        return WriteWithProtectionLifted(address, data);
+    }
 
-            bool ok = Win32.WriteProcessMemory(_handle, (nuint)address, p, (nuint)data.Length, out written) && (int)written == data.Length;
-            Win32.VirtualProtectEx(_handle, (nuint)address, (nuint)data.Length, old, out _);
-            return ok;
+    /// <summary>
+    /// Lifts page protection, writes, and restores it.
+    ///
+    /// VirtualProtectEx reports the previous protection of the FIRST page only, so restoring
+    /// that one value across a multi-page span would stamp it onto every page it touched — a
+    /// write straddling a page boundary could strip execute rights from the following page and
+    /// crash the target later. Each page is therefore lifted and restored on its own.
+    /// </summary>
+    private unsafe bool WriteWithProtectionLifted(ulong address, ReadOnlySpan<byte> data)
+    {
+        ulong end = address + (ulong)data.Length;
+        var restore = new List<(ulong Base, nuint Size, uint Old)>(2);
+
+        try
+        {
+            for (ulong page = address & ~(ulong)(PageSize - 1); page < end; page += PageSize)
+            {
+                ulong lo = Math.Max(page, address);
+                ulong hi = Math.Min(page + PageSize, end);
+                nuint size = (nuint)(hi - lo);
+
+                if (!Win32.VirtualProtectEx(_handle, (nuint)lo, size, PageProtect.ExecuteReadWrite, out uint old))
+                    return false;
+                restore.Add((lo, size, old));
+            }
+
+            fixed (byte* p = data)
+            {
+                return Win32.WriteProcessMemory(_handle, (nuint)address, p, (nuint)data.Length, out nuint written)
+                       && (int)written == data.Length;
+            }
+        }
+        finally
+        {
+            foreach (var (pageBase, size, old) in restore)
+                Win32.VirtualProtectEx(_handle, (nuint)pageBase, size, old, out _);
         }
     }
 
@@ -312,6 +353,9 @@ public sealed class TargetProcess : IDisposable
                 : ReadValue<uint>(address);
             if (next == 0) return 0;
             address = next + (ulong)offsets[i];
+            // A 32-bit target has no addresses past 4 GB; wrapping keeps a broken chain from
+            // producing one the process could never hold.
+            if (!Is64Bit) address &= 0xFFFF_FFFF;
         }
         return address;
     }

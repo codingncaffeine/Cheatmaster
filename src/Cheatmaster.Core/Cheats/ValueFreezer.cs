@@ -9,7 +9,7 @@ namespace Cheatmaster.Core.Cheats;
 /// </summary>
 public sealed class ValueFreezer : IDisposable
 {
-    private readonly record struct Pinned(CheatEntry Entry, ulong Bits, int Width);
+    private readonly record struct Pinned(CheatEntry Entry, ScanType Type, ulong Bits, int Width);
 
     private readonly Lock _gate = new();
     private readonly PeriodicTimer _timer;
@@ -56,7 +56,7 @@ public sealed class ValueFreezer : IDisposable
             double display = value.FitsDecimal ? (double)value.Dec : value.Dbl;
             if (!entry.Interpretation.TryEncodeExact(display, out ulong bits)) continue;
 
-            list.Add(new Pinned(entry, bits, entry.Type.Width()));
+            list.Add(new Pinned(entry, entry.Type, bits, entry.Type.Width()));
         }
 
         lock (_gate) _pinned = [.. list];
@@ -94,7 +94,9 @@ public sealed class ValueFreezer : IDisposable
             ulong address = pin.Entry.Address.Resolve(process);
             if (address == 0) continue;
 
-            Raw.WriteBytes(pin.Entry.Type, pin.Bits, buffer);
+            // Uses the type captured with the value: reading it live could disagree with the
+            // width below and leave stale bytes from the previous entry in the buffer.
+            Raw.WriteBytes(pin.Type, pin.Bits, buffer);
             if (process.Write(address, buffer[..pin.Width])) written++;
         }
 

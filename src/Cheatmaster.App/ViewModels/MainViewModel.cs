@@ -41,14 +41,16 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Settings.ApplyTo(_scanSettings);
 
         // Commands first: the selection setters below raise CanExecuteChanged on them.
-        AttachCommand = new RelayCommand(() => AttachRequested?.Invoke());
-        DetachCommand = new RelayCommand(Detach, () => IsAttached);
+        AttachCommand = new RelayCommand(() => AttachRequested?.Invoke(), () => !IsScanning);
+        DetachCommand = new RelayCommand(Detach, () => IsAttached && !IsScanning);
         ScanCommand = new RelayCommand(async () => await RunScanAsync(first: !HasResults), () => CanScan);
         FirstScanCommand = new RelayCommand(async () => await RunScanAsync(first: !HasResults), () => CanScan);
         NextScanCommand = new RelayCommand(async () => await RunScanAsync(first: false), () => CanScan && HasResults);
         UndoScanCommand = new RelayCommand(UndoScan, () => Session?.CanUndo == true && !IsScanning);
         NewScanCommand = new RelayCommand(NewScan, () => HasResults && !IsScanning);
         CancelScanCommand = new RelayCommand(() => _scanCancellation?.Cancel(), () => IsScanning);
+        CaptureCommand = new RelayCommand(async () => await CaptureAsync(), () => IsAttached && !IsScanning);
+        ClearSnapshotCommand = new RelayCommand(ClearSnapshot, () => HasSnapshot);
         AddSelectedCommand = new RelayCommand(AddSelectedResults);
         RemoveCheatCommand = new RelayCommand(RemoveCheats);
         ClearCheatsCommand = new RelayCommand(ClearCheats, () => Cheats.Count > 0);
@@ -59,6 +61,11 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         PinInterpretationCommand = new RelayCommand(o => PinInterpretation(o as InterpretationChip));
         KeepOnlyCommand = new RelayCommand(o => KeepOnly(o as InterpretationChip));
         FreezeSelectedCommand = new RelayCommand(o => FreezeSelected(o as IList));
+        ShowScannerCommand = new RelayCommand(() => IsLibraryView = false);
+        ShowLibraryCommand = new RelayCommand(() => IsLibraryView = true);
+
+        Library = new LibraryViewModel(_library) { FetchArtworkEnabled = Settings.FetchArtwork };
+        Library.OpenRequested += OnLibraryOpenRequested;
 
         SelectedProfile = Profiles.FirstOrDefault(p => p.Profile == Settings.Profile) ?? Profiles[1];
         SelectedRounding = RoundingModes.FirstOrDefault(r => r.Mode == Settings.Rounding) ?? RoundingModes[1];
@@ -74,6 +81,78 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     }
 
     public event Action? AttachRequested;
+
+    public LibraryViewModel Library { get; }
+
+    public RelayCommand ShowScannerCommand { get; }
+    public RelayCommand ShowLibraryCommand { get; }
+
+    private bool _isLibraryView;
+
+    /// <summary>Which of the two halves of the app is on screen: the scanner or the saved cheats.</summary>
+    public bool IsLibraryView
+    {
+        get => _isLibraryView;
+        set
+        {
+            if (!Set(ref _isLibraryView, value)) return;
+            Raise(nameof(IsScannerView));
+            if (value) _ = Library.ReloadAsync();
+        }
+    }
+
+    public bool IsScannerView => !_isLibraryView;
+
+    private void OnLibraryOpenRequested(LibraryGameRow row)
+    {
+        IsLibraryView = false;
+
+        if (IsAttached && string.Equals(Process!.Name, row.ExecutableName, StringComparison.OrdinalIgnoreCase))
+        {
+            Notify($"{row.Name} is already attached — its cheats are in the table below.", NoticeKind.Info);
+            return;
+        }
+
+        Notify($"Start {row.Name}, then attach to {row.ExecutableName}. Its saved cheats load automatically.", NoticeKind.Info);
+        AttachRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// Looks up cover art and a description for the attached game so it is already dressed when
+    /// the user opens the library.
+    /// </summary>
+    private async Task FetchGameMetadataAsync()
+    {
+        if (!Settings.FetchArtwork || _game is null || _table.MetadataFetched) return;
+
+        var fingerprint = _game;
+        var table = _table;
+
+        try
+        {
+            var metadata = await new GameMetadataService().FetchAsync(fingerprint);
+            if (table != _table) return;   // attached elsewhere while we were waiting
+
+            table.MetadataFetched = true;
+            if (metadata is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(metadata.Name)) table.GameName = metadata.Name;
+                table.Description = metadata.Description;
+                table.Developer = metadata.Developer;
+                table.ReleaseDate = metadata.ReleaseDate;
+                table.SteamAppId = metadata.AppId;
+                table.ArtPath = metadata.ArtPath;
+                GameName = table.GameName;
+            }
+
+            RequestSave();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Artwork is a nicety; never let it interrupt the work.
+            Debug.WriteLine("metadata lookup failed: " + ex.Message);
+        }
+    }
 
     public AppSettings Settings { get; }
     public TargetProcess? Process { get; private set; }
@@ -101,7 +180,14 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         new("Equal to", CompareKind.EqualTo),
         new("Greater than", CompareKind.GreaterThan),
         new("Less than", CompareKind.LessThan),
-        new("Between", CompareKind.Between)
+        new("Between", CompareKind.Between),
+        new("Was … now … (finds hidden values)", CompareKind.ChangedFromTo),
+        new("Changed", CompareKind.Changed),
+        new("Unchanged", CompareKind.Unchanged),
+        new("Increased", CompareKind.Increased),
+        new("Decreased", CompareKind.Decreased),
+        new("Increased by", CompareKind.IncreasedBy),
+        new("Decreased by", CompareKind.DecreasedBy)
     ];
 
     public IReadOnlyList<ProfileOption> Profiles { get; } =
@@ -145,12 +231,33 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             if (!Set(ref _selectedCompare, value)) return;
             Raise(nameof(NeedsSecondValue));
             Raise(nameof(NeedsValue));
+            Raise(nameof(NeedsSnapshot));
+            Raise(nameof(ValuePlaceholder));
+            Raise(nameof(Value2Placeholder));
             RaiseCommands();
         }
     }
 
     public bool NeedsValue => SelectedCompare?.Kind.NeedsValue() ?? true;
     public bool NeedsSecondValue => SelectedCompare?.Kind.NeedsSecondValue() ?? false;
+
+    /// <summary>True for comparisons that work off a captured copy of memory rather than a typed value.</summary>
+    public bool NeedsSnapshot => SelectedCompare is not null &&
+        (SelectedCompare.Kind == CompareKind.ChangedFromTo ||
+         (SelectedCompare.Kind.NeedsPrevious() && !HasResults));
+
+    public string ValuePlaceholder => SelectedCompare?.Kind switch
+    {
+        CompareKind.ChangedFromTo => "value before the change",
+        CompareKind.IncreasedBy or CompareKind.DecreasedBy => "by how much",
+        _ => "value you can see in game"
+    };
+
+    public string Value2Placeholder => SelectedCompare?.Kind switch
+    {
+        CompareKind.ChangedFromTo => "value now",
+        _ => "and this"
+    };
 
     private TypeOption _selectedTypeOption = null!;
     public TypeOption SelectedTypeOption
@@ -375,6 +482,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     public RelayCommand UndoScanCommand { get; }
     public RelayCommand NewScanCommand { get; }
     public RelayCommand CancelScanCommand { get; }
+    public RelayCommand CaptureCommand { get; }
+    public RelayCommand ClearSnapshotCommand { get; }
     public RelayCommand AddSelectedCommand { get; }
     public RelayCommand RemoveCheatCommand { get; }
     public RelayCommand ClearCheatsCommand { get; }
@@ -398,6 +507,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         UndoScanCommand.RaiseCanExecuteChanged();
         NewScanCommand.RaiseCanExecuteChanged();
         CancelScanCommand.RaiseCanExecuteChanged();
+        CaptureCommand.RaiseCanExecuteChanged();
+        ClearSnapshotCommand.RaiseCanExecuteChanged();
+        AttachCommand.RaiseCanExecuteChanged();
         DetachCommand.RaiseCanExecuteChanged();
         SaveTableCommand.RaiseCanExecuteChanged();
         ExportTableCommand.RaiseCanExecuteChanged();
@@ -442,8 +554,16 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             Notify($"Attached to {opened.Name}.", NoticeKind.Success);
     }
 
+    /// <summary>Suspends the live-value refresh, which would otherwise overwrite a cell mid-edit.</summary>
+    public bool IsEditingCell { get; set; }
+
+    /// <summary>Raised when the cheat list changes, so global hotkeys can be re-registered.</summary>
+    public event Action? CheatSetChanged;
+
     public void Detach()
     {
+        // A scan still reading this process must stop before the handle closes under it.
+        _scanCancellation?.Cancel();
         FlushPendingSave();
         _freezer.Attach(null);
         _freezer.Update([]);
@@ -473,6 +593,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         foreach (var entry in _table.Entries) Cheats.Add(new CheatRow(entry, this));
 
         PushFreezeSet();
+        _ = FetchGameMetadataAsync();
 
         if (_table.Entries.Count > 0)
         {
@@ -521,9 +642,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         try
         {
             var session = Session;
-            var results = await Task.Run(() => first
-                ? session.FirstScan(request, progress, token)
-                : session.NextScan(request, progress, token), token);
+            var results = await Task.Run(() => RunScanCore(session, request, first, progress, token), token);
 
             clock.Stop();
             ApplyResults(results, first, clock.Elapsed);
@@ -546,6 +665,106 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             ScanProgress = 0;
             ScanPhase = string.Empty;
         }
+    }
+
+    public bool HasSnapshot => Session?.HasSnapshot == true;
+
+    public string SnapshotStatus
+    {
+        get
+        {
+            var snapshot = Session?.Snapshot;
+            if (snapshot is null) return string.Empty;
+
+            int seconds = (int)(DateTimeOffset.Now - snapshot.TakenAt).TotalSeconds;
+            string age = seconds < 60 ? $"{seconds}s ago" : $"{seconds / 60}m ago";
+            return $"{ByteSize.Format(snapshot.TotalBytes)} captured {age}";
+        }
+    }
+
+    /// <summary>
+    /// Takes the copy of memory that change-based and obfuscated-value searches compare against.
+    /// </summary>
+    private async Task CaptureAsync()
+    {
+        if (Session is null) return;
+
+        _scanCancellation?.Dispose();
+        _scanCancellation = new CancellationTokenSource();
+        var token = _scanCancellation.Token;
+
+        IsScanning = true;
+        ScanPhase = "Capturing";
+        var progress = new Progress<ScanProgress>(p =>
+        {
+            ScanProgress = p.Fraction * 100;
+            ScanPhase = $"Capturing · {ByteSize.Format(p.BytesDone)}";
+        });
+
+        try
+        {
+            var session = Session;
+            var value = UserValue.Parse(ValueText);
+            var snapshot = await Task.Run(() => session.CaptureSnapshot(value, progress, token), token);
+
+            Notify($"Captured {ByteSize.Format(snapshot.TotalBytes)} of memory. " +
+                   "Now change the value in the game, then scan.", NoticeKind.Success);
+            Status = $"Snapshot: {ByteSize.Format(snapshot.TotalBytes)} across {snapshot.RegionCount:N0} regions " +
+                     $"in {snapshot.Duration.TotalSeconds:0.00}s";
+        }
+        catch (OperationCanceledException)
+        {
+            Notify("Capture cancelled.", NoticeKind.Info);
+        }
+        catch (ScanException ex)
+        {
+            Notify(ex.Message, NoticeKind.Warning);
+        }
+        catch (Exception ex)
+        {
+            Notify("Capture failed: " + ex.Message, NoticeKind.Error);
+        }
+        finally
+        {
+            IsScanning = false;
+            ScanProgress = 0;
+            ScanPhase = string.Empty;
+            Raise(nameof(HasSnapshot));
+            Raise(nameof(SnapshotStatus));
+            Raise(nameof(NeedsSnapshot));
+            RaiseCommands();
+        }
+    }
+
+    private void ClearSnapshot()
+    {
+        Session?.ClearSnapshot();
+        Raise(nameof(HasSnapshot));
+        Raise(nameof(SnapshotStatus));
+        Raise(nameof(NeedsSnapshot));
+        RaiseCommands();
+        Status = "Snapshot discarded.";
+    }
+
+    /// <summary>
+    /// Picks the right search for the comparison. A change-based comparison narrows existing
+    /// results when there are any, and otherwise compares against the captured snapshot, which
+    /// is what makes searching without knowing the value work at all.
+    /// </summary>
+    private static ScanResults RunScanCore(ScanSession session, ScanRequest request, bool first,
+        IProgress<ScanProgress> progress, CancellationToken token)
+    {
+        if (request.Compare == CompareKind.ChangedFromTo)
+            return session.DifferentialScan(request.Value, request.Value2, request, progress, token);
+
+        if (request.Compare.NeedsPrevious())
+        {
+            if (session.HasResults) return session.NextScan(request, progress, token);
+            if (session.HasSnapshot) return session.SnapshotScan(request, progress, token);
+            throw new ScanException("Capture memory first, change the value in the game, then scan.");
+        }
+
+        return first ? session.FirstScan(request, progress, token) : session.NextScan(request, progress, token);
     }
 
     private int[]? PinnedInterpretations()
@@ -641,7 +860,16 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     {
         if (Session is null || !Session.CanUndo) return;
         Session.Undo();
-        if (Session.Current is null) return;
+
+        // Undoing past the first scan must clear the grid too, or the results on screen no
+        // longer match what the session thinks it holds.
+        if (Session.Current is null)
+        {
+            NewScan();
+            Status = "Back to the start.";
+            return;
+        }
+
         ApplyResults(Session.Current, first: false, TimeSpan.Zero);
         Status = "Went back one scan.";
     }
@@ -665,22 +893,46 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
     // ------------------------------------------------------------------ cheat table
 
-    public void AddResult(ResultRow row)
+    public void AddResult(ResultRow row) => AddResults([row]);
+
+    /// <summary>
+    /// Adds results in one batch: the freeze set is rebuilt once and one notice is shown, rather
+    /// than once per row, which a two-hundred-row selection would otherwise turn into a stall.
+    /// </summary>
+    public void AddResults(IReadOnlyList<ResultRow> rows)
     {
-        if (Process is null) return;
+        if (Process is null || rows.Count == 0) return;
 
-        var entry = new CheatEntry
+        const int Limit = 200;
+        int added = 0;
+        string? firstAddress = null;
+
+        foreach (var row in rows)
         {
-            Description = SuggestDescription(),
-            Address = AddressSpec.ForAddress(Process, row.Address),
-            FreezeValue = row.ValueText
-        };
-        entry.SetInterpretation(row.Interpretation);
+            if (added >= Limit) break;
 
-        _table.Entries.Add(entry);
-        Cheats.Add(new CheatRow(entry, this));
+            var entry = new CheatEntry
+            {
+                Description = SuggestDescription(),
+                Address = AddressSpec.ForAddress(Process, row.Address),
+                FreezeValue = row.ValueText
+            };
+            entry.SetInterpretation(row.Interpretation);
+
+            _table.Entries.Add(entry);
+            Cheats.Add(new CheatRow(entry, this));
+            firstAddress ??= entry.Address.Display;
+            added++;
+        }
+
+        if (added == 0) return;
         CheatsChanged();
-        Notify($"Added {entry.Address.Display} to the cheat table.", NoticeKind.Success);
+
+        string message = added == 1
+            ? $"Added {firstAddress} to the cheat table."
+            : $"Added {added} addresses to the cheat table.";
+        if (rows.Count > Limit) message += $" {rows.Count - Limit} more were left out — {Limit} at a time is the cap.";
+        Notify(message, NoticeKind.Success);
     }
 
     private string SuggestDescription()
@@ -698,16 +950,13 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             return;
         }
 
-        int added = 0;
+        var rows = new List<ResultRow>(selection.Count);
         foreach (object? item in selection)
         {
-            if (item is ResultRow row)
-            {
-                AddResult(row);
-                added++;
-            }
-            if (added >= 200) break;
+            if (item is ResultRow row) rows.Add(row);
         }
+
+        AddResults(rows);
     }
 
     private void RemoveCheats(object? parameter)
@@ -756,6 +1005,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     {
         PushFreezeSet();
         Raise(nameof(FreezeStatus));
+        CheatSetChanged?.Invoke();
         ClearCheatsCommand.RaiseCanExecuteChanged();
         ExportTableCommand.RaiseCanExecuteChanged();
         RequestSave();
@@ -857,7 +1107,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             string? path = Environment.ProcessPath;
             if (string.IsNullOrEmpty(path)) return;
 
-            Process?.Dispose();
+
             var info = new ProcessStartInfo(path) { UseShellExecute = true, Verb = "runas" };
             System.Diagnostics.Process.Start(info);
             Application.Current.Shutdown();
@@ -888,7 +1138,12 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         if (!Settings.LiveValues || IsScanning) return;
 
-        foreach (var row in Cheats) row.Refresh(process);
+        // Skip while a cell is being edited: pushing a fresh value would rewrite what is
+        // being typed, keystroke by keystroke.
+        if (!IsEditingCell)
+        {
+            foreach (var row in Cheats) row.Refresh(process);
+        }
 
         if (Results is not null)
         {

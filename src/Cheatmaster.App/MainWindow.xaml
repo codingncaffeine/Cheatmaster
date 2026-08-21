@@ -3,11 +3,16 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:vm="clr-namespace:Cheatmaster.App.ViewModels"
+        xmlns:views="clr-namespace:Cheatmaster.App.Views"
         Title="Cheatmaster"
         Icon="Assets/cheatmaster.ico"
         Height="900" Width="1440" MinHeight="620" MinWidth="1080"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal"
         UseLayoutRounding="True"
         WindowStyle="None"
@@ -21,7 +26,7 @@
     <Window.InputBindings>
         <KeyBinding Key="F5" Command="{Binding ScanCommand}" />
         <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewScanCommand}" />
-        <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoScanCommand}" />
+        <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding UndoScanCommand}" />
         <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveTableCommand}" />
         <KeyBinding Key="P" Modifiers="Control" Command="{Binding AttachCommand}" />
     </Window.InputBindings>
@@ -66,11 +71,24 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Button Grid.Column="0" Command="{Binding AttachCommand}" Padding="10,6" MinWidth="260"
+                    <Border Grid.Column="0" Margin="0,0,12,0" CornerRadius="5" Padding="2"
+                            Background="#FF16171A" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton Content="Scanner" Style="{StaticResource SegmentToggle}"
+                                          IsChecked="{Binding IsScannerView, Mode=OneWay}"
+                                          Command="{Binding ShowScannerCommand}" />
+                            <ToggleButton Content="Library" Style="{StaticResource SegmentToggle}"
+                                          IsChecked="{Binding IsLibraryView, Mode=OneWay}"
+                                          Command="{Binding ShowLibraryCommand}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button Grid.Column="1" Command="{Binding AttachCommand}" Padding="10,6" MinWidth="260"
                             HorizontalContentAlignment="Left" ToolTip="Choose the process to work on  (Ctrl+P)">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="2,0,10,0">
@@ -93,7 +111,7 @@
                         </StackPanel>
                     </Button>
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <StackPanel Grid.Column="3" Orientation="Horizontal">
                         <Border Background="#22D0574C" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1"
                                 CornerRadius="4" Padding="9,4" Margin="0,0,10,0" VerticalAlignment="Center"
                                 Visibility="{Binding ShowElevationHint, Converter={StaticResource BoolToVis}}">
@@ -161,7 +179,7 @@
             </Border>
 
             <!-- ==================== body ==================== -->
-            <Grid Grid.Row="3">
+            <Grid Grid.Row="3" Visibility="{Binding IsScannerView, Converter={StaticResource BoolToVis}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="310" MinWidth="270" />
                     <ColumnDefinition Width="5" />
@@ -175,19 +193,43 @@
                             <TextBlock Text="SEARCH FOR" Style="{StaticResource SectionLabel}" />
 
                             <TextBox x:Name="ValueBox" Style="{StaticResource MonoTextBox}" FontSize="16"
-                                     Padding="10,8" Tag="value you can see in game"
+                                     Padding="10,8" Tag="{Binding ValuePlaceholder}"
                                      Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                                      KeyDown="OnValueKeyDown"
                                      IsEnabled="{Binding NeedsValue}" />
 
                             <TextBox Style="{StaticResource MonoTextBox}" FontSize="14" Margin="0,7,0,0"
-                                     Padding="10,7" Tag="and this"
+                                     Padding="10,7" Tag="{Binding Value2Placeholder}"
                                      Text="{Binding Value2Text, UpdateSourceTrigger=PropertyChanged}"
                                      KeyDown="OnValueKeyDown"
                                      Visibility="{Binding NeedsSecondValue, Converter={StaticResource BoolToVis}}" />
 
                             <ComboBox Margin="0,7,0,0" ItemsSource="{Binding CompareOptions}"
                                       SelectedItem="{Binding SelectedCompare}" DisplayMemberPath="Label" />
+
+                            <!-- Snapshot step, shown only for the searches that need one. -->
+                            <Border Margin="0,10,0,0" Padding="11,10" CornerRadius="5"
+                                    Background="#1A4FA6E8" BorderBrush="{StaticResource InfoBrush}" BorderThickness="1"
+                                    Visibility="{Binding NeedsSnapshot, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock TextWrapping="Wrap" FontSize="11" LineHeight="16"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Text="This search compares memory against a copy taken earlier. Capture now, change the value in the game, then scan." />
+
+                                    <Button Content="Capture memory now" Command="{Binding CaptureCommand}"
+                                            Margin="0,9,0,0" />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                                Visibility="{Binding HasSnapshot, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="{Binding SnapshotStatus}" FontSize="11"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{StaticResource SuccessBrush}" />
+                                        <Button Content="discard" Command="{Binding ClearSnapshotCommand}"
+                                                Margin="8,0,0,0" Style="{StaticResource IconButton}"
+                                                FontFamily="{StaticResource UiFont}" FontSize="11" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <TextBlock Text="STORED AS" Style="{StaticResource SectionLabel}" Margin="0,16,0,6" />
                             <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding SelectedTypeOption}"
@@ -209,7 +251,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Button Grid.Column="0" Content="Undo" Command="{Binding UndoScanCommand}"
-                                        ToolTip="Go back one scan  (Ctrl+Z)" />
+                                        ToolTip="Go back one scan  (Alt+Left)" />
                                 <Button Grid.Column="2" Content="New search" Command="{Binding NewScanCommand}"
                                         ToolTip="Throw away these results  (Ctrl+N)" />
                             </Grid>
@@ -338,12 +380,12 @@
                                                        Foreground="{StaticResource TextMutedBrush}" />
                                         </Border>
                                         <Button Content="&#xE718;" Style="{StaticResource IconButton}" Margin="4,0,0,0"
-                                                FontFamily="Segoe MDL2 Assets" FontSize="10" Padding="4,2"
+                                                FontFamily="{StaticResource IconFont}" FontSize="10" Padding="4,2"
                                                 ToolTip="Only consider this encoding from now on"
                                                 Command="{Binding DataContext.PinInterpretationCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}" />
                                         <Button Content="&#xE8DE;" Style="{StaticResource IconButton}" FontSize="10"
-                                                FontFamily="Segoe MDL2 Assets" Padding="4,2"
+                                                FontFamily="{StaticResource IconFont}" Padding="4,2"
                                                 ToolTip="Throw away every other encoding right now"
                                                 Command="{Binding DataContext.KeepOnlyCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}" />
@@ -552,6 +594,9 @@
                     </Border>
                 </Grid>
             </Grid>
+
+            <views:LibraryView Grid.Row="3" DataContext="{Binding Library}"
+                               Visibility="{Binding DataContext.IsLibraryView, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
 
             <!-- ==================== status ==================== -->
             <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"

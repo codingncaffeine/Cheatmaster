@@ -7,6 +7,10 @@
         Height="620" Width="700" MinHeight="420" MinWidth="520"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True"
         WindowStyle="None"
         ShowInTaskbar="False">

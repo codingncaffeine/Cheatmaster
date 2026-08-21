@@ -23,6 +23,7 @@ public class UserValueTests
     [Theory]
     [InlineData("0x1F", 31.0)]
     [InlineData("FFh", 255.0)]
+    [InlineData("-0x10", -16.0)]
     public void Parses_hex_values(string text, double expected)
     {
         var v = UserValue.Parse(text);
@@ -71,6 +72,24 @@ public class UserValueTests
         Assert.True(parsed.IsValid);
         Assert.Equal(12.5, (double)parsed.Dec, 9);
         Assert.Equal(1, parsed.DecimalPlaces);
+    }
+
+    /// <summary>
+    /// Truncation runs toward zero, so a display of -82 can be hiding -82.67. The slack has to
+    /// sit on the other side of the number for negatives than it does for positives.
+    /// </summary>
+    [Fact]
+    public void Display_window_handles_negative_truncation()
+    {
+        var (lo, hi) = UserValue.Parse("-82").Window(RoundingMode.Display);
+        Assert.True(lo <= -82.9, $"window {lo}..{hi} misses a truncated -82.67");
+        Assert.True(hi >= -81.5);
+
+        var interp = Interpretation.Plain(ScanType.Float);
+        Assert.True(interp.TryEncodeRange(UserValue.Parse("-82"), RoundingMode.Display, out ulong loBits, out ulong hiBits));
+        uint bits = BitConverter.SingleToUInt32Bits(-82.67f);
+        Assert.True(Raw.Compare(ScanType.Float, bits, loBits) >= 0);
+        Assert.True(Raw.Compare(ScanType.Float, bits, hiBits) <= 0);
     }
 
     [Fact]
@@ -188,18 +207,19 @@ public class ScanPlanTests
         Assert.True(plan.Items.Length >= 8, $"expected a broad plan, got {plan.Items.Length}");
     }
 
+    /// <summary>
+    /// Two theories that reduce to the same bytes AND the same type are one scan. Types are
+    /// kept apart deliberately — see <see cref="Unsigned_theories_are_not_folded_into_their_signed_twin"/>.
+    /// </summary>
     [Fact]
-    public void Identical_byte_patterns_are_only_scanned_once()
+    public void The_same_scan_is_never_queued_twice_for_one_type()
     {
         var interps = InterpretationSets.Build(ScanProfile.Standard);
         var plan = ScanPlan.Build(interps, UserValue.Parse("100"), RoundingMode.Display);
 
-        var seen = new HashSet<(int, ulong)>();
+        var seen = new HashSet<(ScanType, ulong, ulong)>();
         foreach (var item in plan.Items)
-        {
-            if (!item.IsPoint) continue;
-            Assert.True(seen.Add((item.Type.Width(), item.LoBits)), "duplicate point scan in plan");
-        }
+            Assert.True(seen.Add((item.Type, item.LoBits, item.HiBits)), $"duplicate scan for {item.Type}");
     }
 
     [Fact]
@@ -210,6 +230,28 @@ public class ScanPlanTests
 
         foreach (var item in plan.Items)
             Assert.True(item.Type.Width() > 2 || interps[item.InterpId].HasScale);
+    }
+
+    /// <summary>
+    /// An unsigned theory must survive its own scan even when a signed type of the same width
+    /// produces identical bytes, because the two disagree the moment the value passes the
+    /// signed maximum.
+    /// </summary>
+    [Fact]
+    public void Unsigned_theories_are_not_folded_into_their_signed_twin()
+    {
+        var interps = InterpretationSets.Build(ScanProfile.Standard);
+        var plan = ScanPlan.Build(interps, UserValue.Parse("77"), RoundingMode.Display);
+
+        bool signed = false, unsigned = false;
+        foreach (var item in plan.Items)
+        {
+            if (item.Type == ScanType.Int32) signed = true;
+            if (item.Type == ScanType.UInt32) unsigned = true;
+        }
+
+        Assert.True(signed, "the signed theory was dropped");
+        Assert.True(unsigned, "the unsigned theory was folded away");
     }
 
     [Fact]

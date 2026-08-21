@@ -13,7 +13,7 @@ public sealed class ScanException : Exception
 /// Drives a scan from first pass to final address list, keeping the surviving results and the
 /// history needed to undo a step.
 /// </summary>
-public sealed class ScanSession
+public sealed partial class ScanSession
 {
     private const int WindowSize = 64 * 1024;
 
@@ -62,6 +62,8 @@ public sealed class ScanSession
             throw new ScanException("'Not equal to' matches almost everything on a first scan. Start with a value you can see.");
         if (!request.Value.IsValid)
             throw new ScanException("Enter a value to search for.");
+        if (request.Compare == CompareKind.Between && !request.Value2.IsValid)
+            throw new ScanException("A between search needs both ends of the range.");
 
         var interpretations = InterpretationSets.Build(request.Profile, request.ForcedType);
         var plan = ScanPlan.Build(interpretations, request.Compare, request.Value, request.Value2, request.Rounding);
@@ -126,7 +128,7 @@ public sealed class ScanSession
         int truncated = 0;
         int chunkSize = Settings.ChunkSize;
         int alignment = Settings.Alignment;
-        long perInterpCap = Settings.MaxResultsPerInterpretation;
+        long perInterpCap = Math.Max(1, Settings.MaxResultsPerInterpretation);
         long globalCap = Settings.MaxResults;
         var items = plan.Items;
 
@@ -376,6 +378,7 @@ public sealed class ScanSession
             Values = values,
             Count = total,
             Groups = groups,
+            Truncated = previous.Truncated,
             BytesScanned = (long)previous.Count * 8,
             Duration = sw.Elapsed
         };
@@ -441,10 +444,14 @@ public sealed class ScanSession
 
     /// <summary>
     /// Orders two stored patterns the way the player would see them. Byte-swapped and XORed
-    /// storage does not order the same way as its raw bytes, so those decode first.
+    /// storage does not order the same way as its raw bytes, so that layer is undone first —
+    /// exactly, rather than by decoding to double, which would collapse 64-bit values above
+    /// 2^53 and make a genuine increase look like no change at all.
     /// </summary>
     private static int CompareDisplay(in Interpretation interp, ulong a, ulong b) =>
-        interp.PointOnly ? interp.Decode(a).CompareTo(interp.Decode(b)) : Raw.Compare(interp.Type, a, b);
+        interp.PointOnly
+            ? Raw.Compare(interp.Type, interp.Unscramble(a), interp.Unscramble(b))
+            : Raw.Compare(interp.Type, a, b);
 
     /// <summary>Re-reads the current stored value at one result index.</summary>
     public bool TryReadCurrent(int index, out ulong bits)

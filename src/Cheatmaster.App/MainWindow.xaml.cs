@@ -33,17 +33,30 @@ public partial class MainWindow : Window
         ChromeSupport.Apply(this);
 
         _viewModel.AttachRequested += ShowProcessPicker;
+        _viewModel.CheatSetChanged += SyncHotkeys;
         _hotkeys.Pressed += OnHotkeyPressed;
 
         SourceInitialized += (_, _) =>
         {
-            if (PresentationSource.FromVisual(this) is HwndSource source) _hotkeys.Attach(source);
+            if (PresentationSource.FromVisual(this) is HwndSource source)
+            {
+                _hotkeys.Attach(source);
+                SyncHotkeys();
+            }
         };
 
         Loaded += (_, _) =>
         {
             ValueBox.Focus();
             HookResultsScroll();
+
+            // Selecting every row would realise a view model per hit, which is exactly what the
+            // lazy result list exists to avoid.
+            ResultsGrid.CommandBindings.Add(new CommandBinding(ApplicationCommands.SelectAll, OnSelectAllResults));
+
+            CheatsGrid.BeginningEdit += (_, _) => _viewModel.IsEditingCell = true;
+            CheatsGrid.CellEditEnding += (_, _) => _viewModel.IsEditingCell = false;
+            CheatsGrid.RowEditEnding += (_, _) => _viewModel.IsEditingCell = false;
         };
 
         Closing += (_, _) =>
@@ -117,6 +130,37 @@ public partial class MainWindow : Window
             if (string.Equals(row.Hotkey, combination, StringComparison.OrdinalIgnoreCase))
                 row.Frozen = !row.Frozen;
         }
+    }
+
+    /// <summary>
+    /// Registers exactly the hotkeys the table asks for. Registration is system-wide, so a
+    /// combination another application already owns is reported rather than failing quietly.
+    /// </summary>
+    private void SyncHotkeys()
+    {
+        var wanted = new List<string>();
+        foreach (var row in _viewModel.Cheats)
+        {
+            if (!string.IsNullOrWhiteSpace(row.Hotkey)) wanted.Add(row.Hotkey);
+        }
+
+        var failed = _hotkeys.Sync(wanted);
+        if (failed.Count > 0)
+            _viewModel.Notify("Another application already owns " + string.Join(", ", failed) + ".", NoticeKind.Warning);
+    }
+
+    private void OnSelectAllResults(object sender, ExecutedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (_viewModel.Results is not { Count: > 0 } results) return;
+
+        const int Limit = 200;
+        ResultsGrid.SelectedItems.Clear();
+        int take = Math.Min(Limit, results.Count);
+        for (int i = 0; i < take; i++) ResultsGrid.SelectedItems.Add(results[i]);
+
+        if (results.Count > take)
+            _viewModel.Notify($"Selected the first {take:N0} of {results.Count:N0} results.", NoticeKind.Info);
     }
 
     // ---------------------------------------------------------------- result virtualisation

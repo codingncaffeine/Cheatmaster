@@ -83,6 +83,14 @@ public readonly record struct Interpretation(
         return bits;
     }
 
+    /// <summary>
+    /// Strips only the encoding that destroys numeric order — the byte swap and the XOR key —
+    /// leaving a pattern that can be compared exactly. Scale and bias are monotonic, so ordering
+    /// the unscrambled patterns orders the values they represent, without routing 64-bit
+    /// integers through double and losing the low bits.
+    /// </summary>
+    public ulong Unscramble(ulong storedBits) => Undo(storedBits);
+
     /// <summary>Turns a stored pattern back into the number the player would see.</summary>
     public double Decode(ulong storedBits)
     {

@@ -42,6 +42,7 @@
 
     <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, Courier New</FontFamily>
+    <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
     <sys:Double x:Key="CornerSmall">4</sys:Double>
 
     <!-- ============================ text ============================ -->
@@ -52,7 +53,6 @@
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
     </Style>
-    <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}" />
 
     <Style TargetType="TextBlock" x:Key="HeadingText" BasedOn="{StaticResource BaseText}">
         <Setter Property="FontSize" Value="13" />
@@ -182,7 +182,7 @@
         <Setter Property="Height" Value="32" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="FontSize" Value="11" />
-        <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+        <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -472,7 +472,7 @@
         </Setter>
     </Style>
 
-    <Style TargetType="RadioButton" BasedOn="{StaticResource {x:Type CheckBox}}" />
+
 
     <!-- ============================ scroll bars ============================ -->
     <Style x:Key="ScrollThumb" TargetType="Thumb">

@@ -2,7 +2,23 @@ namespace Cheatmaster.Core.Cheats;
 
 /// <summary>A game in the library, with just enough detail to list it without loading every entry.</summary>
 public sealed record LibraryEntry(string Key, string GameName, string ExecutableName, string GameVersion,
-    int CheatCount, DateTimeOffset Modified, string Path);
+    int CheatCount, DateTimeOffset Modified, string Path, string Description, string Developer,
+    string ReleaseDate, string ArtPath, string Notes)
+{
+    public bool HasArt => !string.IsNullOrEmpty(ArtPath) && File.Exists(ArtPath);
+
+    public string CheatSummary => CheatCount == 1 ? "1 cheat" : $"{CheatCount} cheats";
+
+    public string Subtitle
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Developer)) return Developer;
+            if (!string.IsNullOrWhiteSpace(GameVersion)) return GameVersion;
+            return ExecutableName;
+        }
+    }
+}
 
 /// <summary>
 /// The per-game store of saved cheats. Tables are individual files rather than rows in one
@@ -45,6 +61,7 @@ public sealed class CheatLibrary
         table.GameName = string.IsNullOrWhiteSpace(table.GameName) ? fingerprint.DisplayName : table.GameName;
         table.ExecutableName = fingerprint.ExecutableName;
         table.ExecutableHash = fingerprint.Hash;
+        if (!string.IsNullOrEmpty(fingerprint.Path)) table.ExecutablePath = fingerprint.Path;
         if (string.IsNullOrEmpty(table.GameVersion)) table.GameVersion = fingerprint.Version;
         table.Save(PathFor(fingerprint));
     }
@@ -66,7 +83,12 @@ public sealed class CheatLibrary
                 table.GameVersion,
                 table.Entries.Count,
                 table.Modified,
-                path));
+                path,
+                table.Description,
+                table.Developer,
+                table.ReleaseDate,
+                table.ArtPath,
+                table.Notes));
         }
 
         entries.Sort(static (a, b) => b.Modified.CompareTo(a.Modified));
