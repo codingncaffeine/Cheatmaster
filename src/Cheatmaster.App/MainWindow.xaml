@@ -129,6 +129,8 @@
                                    FontSize="11.5" Foreground="{StaticResource SuccessBrush}"
                                    Visibility="{Binding FreezeStatus, Converter={StaticResource NotEmptyToVis}}" />
 
+                        <Button Content="Guide" Command="{Binding ShowGuideCommand}" Style="{StaticResource GhostButton}"
+                                Margin="0,0,8,0" ToolTip="Walk through a whole search, one step at a time" />
                         <Button Content="Detach" Command="{Binding DetachCommand}" Style="{StaticResource GhostButton}" />
                     </StackPanel>
                 </Grid>
@@ -187,7 +189,8 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- scan panel -->
-                <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}">
+                <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
+                        Visibility="{Binding Guide.IsActive, Converter={StaticResource BoolToVisInverted}}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,14,10,14">
                         <StackPanel>
                             <TextBlock Text="SEARCH FOR" Style="{StaticResource SectionLabel}" />
@@ -312,6 +315,78 @@
                             </Expander>
                         </StackPanel>
                     </ScrollViewer>
+                </Border>
+
+                <!-- guided walkthrough, in place of the scan panel until it is dismissed -->
+                <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
+                        Visibility="{Binding Guide.IsActive, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="14,14,10,14">
+                            <StackPanel>
+                                <TextBlock Text="GETTING STARTED" Style="{StaticResource SectionLabel}" />
+
+                                <TextBlock Text="{Binding Guide.Title}" FontSize="15.5" FontWeight="SemiBold"
+                                           TextWrapping="Wrap" Margin="0,10,0,0" />
+
+                                <TextBlock Text="{Binding Guide.Body}" TextWrapping="Wrap" LineHeight="19"
+                                           Margin="0,8,0,0" Foreground="{StaticResource TextMutedBrush}" />
+
+                                <TextBox Margin="0,14,0,0" Padding="10,8" FontSize="14"
+                                         Tag="health, money, ammo…"
+                                         Text="{Binding Guide.Subject, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding Guide.ShowSubjectBox, Converter={StaticResource BoolToVis}}" />
+
+                                <TextBox Margin="0,14,0,0" Padding="10,8" FontSize="16"
+                                         Style="{StaticResource MonoTextBox}"
+                                         Tag="{Binding ValuePlaceholder}"
+                                         Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                         KeyDown="OnGuideValueKeyDown"
+                                         Visibility="{Binding Guide.ShowValueBox, Converter={StaticResource BoolToVis}}" />
+
+                                <ItemsControl ItemsSource="{Binding Guide.Choices}" Margin="0,14,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding Command}" Margin="0,0,0,8" Padding="12,10"
+                                                    HorizontalContentAlignment="Left">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Label}" FontSize="12.5" FontWeight="SemiBold"
+                                                               TextWrapping="Wrap"
+                                                               Foreground="{StaticResource TextBrush}" />
+                                                    <TextBlock Text="{Binding Hint}" FontSize="11" Margin="0,3,0,0"
+                                                               TextWrapping="Wrap"
+                                                               Foreground="{StaticResource TextFaintBrush}" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Button Content="{Binding Guide.PrimaryLabel}" Command="{Binding Guide.PrimaryCommand}"
+                                        Style="{StaticResource PrimaryButton}" Margin="0,14,0,0" Padding="12,9"
+                                        Visibility="{Binding Guide.HasPrimary, Converter={StaticResource BoolToVis}}" />
+
+                                <ProgressBar Margin="0,12,0,0" Height="4" Maximum="100"
+                                             Value="{Binding ScanProgress, Mode=OneWay}"
+                                             Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
+
+                                <TextBlock Text="{Binding Guide.ProgressText}" Margin="0,12,0,0" FontSize="11.5"
+                                           TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                           Visibility="{Binding Guide.ProgressText, Converter={StaticResource NotEmptyToVis}}" />
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <Border Grid.Row="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                                Padding="14,10">
+                            <Button Content="Skip the guide" Command="{Binding Guide.DismissCommand}"
+                                    Style="{StaticResource GhostButton}" HorizontalAlignment="Left"
+                                    ToolTip="Go back to the full search panel. The Guide button in the bar brings this back." />
+                        </Border>
+                    </Grid>
                 </Border>
 
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"

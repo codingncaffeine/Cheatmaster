@@ -35,6 +35,7 @@ public partial class MainWindow : Window
 
         _viewModel.AttachRequested += ShowProcessPicker;
         _viewModel.CheatSetChanged += SyncHotkeys;
+        _viewModel.Guide.StableAddressRequested += OnGuideStableAddressRequested;
         _viewModel.Library.PromptForValue = (title, message, initial) =>
             ValuePromptWindow.Ask(this, title, message, initial);
         _viewModel.PromptForValue = (title, message, initial) =>
@@ -98,6 +99,28 @@ public partial class MainWindow : Window
         if (e.Key != Key.Enter) return;
         if (_viewModel.ScanCommand.CanExecute(null)) _viewModel.ScanCommand.Execute(null);
         e.Handled = true;
+    }
+
+    /// <summary>Enter in the guide's value box does what its button does, so the game stays in focus.</summary>
+    private void OnGuideValueKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (_viewModel.Guide.PrimaryCommand.CanExecute(null)) _viewModel.Guide.PrimaryCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// The guide's last step: trace a route to the entry it has just saved, so the cheat still
+    /// works after a restart. The newest entry is the one it added.
+    /// </summary>
+    private void OnGuideStableAddressRequested()
+    {
+        if (_viewModel.Cheats.Count == 0) return;
+
+        var row = _viewModel.Cheats[^1];
+        CheatsGrid.SelectedItem = row;
+        CheatsGrid.ScrollIntoView(row);
+        OnFindPointerPath(this, new RoutedEventArgs());
     }
 
     /// <summary>

@@ -80,6 +80,14 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         _timer.Tick += OnTick;
         _timer.Start();
 
+
+        Guide = new GuideViewModel(this);
+        ShowGuideCommand = new RelayCommand(() => Guide.Show());
+
+        // The walkthrough opens by itself the first time, which is the whole point of it, and
+        // never again once it has been finished or skipped.
+        if (!Settings.GuideDismissed) Guide.Show();
+
         Status = "Not attached. Pick a process to begin.";
     }
 
@@ -901,6 +909,46 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         _visibleLast = last;
     }
 
+    // ------------------------------------------------------------------ the guided walkthrough
+
+    /// <summary>
+    /// The first-run walkthrough. It drives the commands below rather than carrying its own copy
+    /// of the search, so what it does and what the buttons do cannot drift apart.
+    /// </summary>
+    public GuideViewModel Guide { get; }
+
+    public RelayCommand ShowGuideCommand { get; }
+
+    /// <summary>Chooses a comparison by kind, so the guide need not know the order of the list.</summary>
+    public void SelectCompare(CompareKind kind)
+    {
+        foreach (var option in CompareOptions)
+        {
+            if (option.Kind != kind) continue;
+            SelectedCompare = option;
+            return;
+        }
+    }
+
+    /// <summary>The same scan the search button runs, awaited so the guide can react to the result.</summary>
+    public Task RunScanFromGuideAsync() => RunScanAsync(first: !HasResults);
+
+    public Task CaptureSnapshotAsync() => CaptureAsync();
+
+    /// <summary>Throws the current results away and starts over, as the New search button does.</summary>
+    public void StartOver() => NewScan();
+
+    /// <summary>The first few results, for the guide to save in one go.</summary>
+    public List<ResultRow> TakeResults(int max)
+    {
+        var rows = new List<ResultRow>();
+        if (Results is not { } results) return rows;
+
+        int count = Math.Min(max, results.Count);
+        for (int i = 0; i < count; i++) rows.Add(results[i]);
+        return rows;
+    }
+
     // ------------------------------------------------------------------ cheat table
 
     public void AddResult(ResultRow row) => AddResults([row]);
@@ -922,7 +970,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     /// Adds results in one batch: the freeze set is rebuilt once and one notice is shown, rather
     /// than once per row, which a two-hundred-row selection would otherwise turn into a stall.
     /// </summary>
-    public void AddResults(IReadOnlyList<ResultRow> rows)
+    public void AddResults(IReadOnlyList<ResultRow> rows, string? name = null)
     {
         if (Process is null || rows.Count == 0) return;
 
@@ -933,8 +981,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         // Several candidates added at once are almost always one thing the player can see, and
         // there is usually no way to tell which of them matters. They get one name up front so
         // the library can show them as a single line instead of a wall of addresses.
-        string group = string.Empty;
-        if (rows.Count > 1)
+        // The guide has already asked what this is, so it hands the name over rather than asking twice.
+        string group = name?.Trim() ?? string.Empty;
+        if (rows.Count > 1 && group.Length == 0)
         {
             string suggestion = string.IsNullOrWhiteSpace(ValueText) ? "New cheat" : $"Value {ValueText}";
             group = (PromptForValue?.Invoke(

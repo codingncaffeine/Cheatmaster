@@ -27,6 +27,9 @@ public sealed class AppSettings
     public bool AutoBackup { get; set; }
     public DateTimeOffset? LastSyncUtc { get; set; }
     public bool AutoLoadTables { get; set; } = true;
+
+    /// <summary>The first-run walkthrough opens by itself until it has been finished or skipped once.</summary>
+    public bool GuideDismissed { get; set; }
     public bool LiveValues { get; set; } = true;
     public int MaxResultsPerInterpretation { get; set; } = 2_000_000;
 
