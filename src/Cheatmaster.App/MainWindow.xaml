@@ -579,6 +579,11 @@
                                     <CheckBox Content="Freeze all" IsChecked="{Binding FreezeAll}"
                                               VerticalAlignment="Center" Margin="0,0,14,0"
                                               ToolTip="Hold every value in this table where it is" />
+                                    <Button Content="Re-check routes" Style="{StaticResource GhostButton}" Padding="10,4"
+                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
+                                            Command="{Binding RecheckRoutesCommand}"
+                                            Visibility="{Binding HasRoutes, Converter={StaticResource BoolToVis}}"
+                                            ToolTip="Follow every saved route again. A route only proves itself after the game has restarted." />
                                     <Button Content="Set value…" Style="{StaticResource GhostButton}" Padding="10,4"
                                             MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
                                             Command="{Binding SetValueCommand}"
@@ -671,6 +676,21 @@
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsResolved}" Value="False">
                                                         <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Route" Width="90" IsReadOnly="True"
+                                                        Binding="{Binding RouteText, Mode=OneWay}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
+                                                <Setter Property="Margin" Value="10,0,0,0" />
+                                                <Setter Property="ToolTip" Value="When this route was last seen to still reach a value" />
+                                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding RouteText}" Value="not checked">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>

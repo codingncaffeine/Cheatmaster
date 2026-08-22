@@ -64,6 +64,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         SetValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: false));
         FreezeAtValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: true));
         GroupSelectedCommand = new RelayCommand(GroupSelected);
+        RecheckRoutesCommand = new RelayCommand(RecheckRoutes, () => IsAttached && !IsScanning);
         ShowScannerCommand = new RelayCommand(() => IsLibraryView = false);
         ShowLibraryCommand = new RelayCommand(() => IsLibraryView = true);
 
@@ -513,6 +514,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     public RelayCommand FreezeAtValueCommand { get; }
     public RelayCommand GroupSelectedCommand { get; }
 
+    /// <summary>Follows every saved route again, which is the only thing that proves one.</summary>
+    public RelayCommand RecheckRoutesCommand { get; }
+
     private bool CanScan => IsAttached && !IsScanning &&
         (!NeedsValue || UserValue.Parse(ValueText).IsValid) &&
         (!NeedsSecondValue || UserValue.Parse(Value2Text).IsValid);
@@ -532,6 +536,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         SaveTableCommand.RaiseCanExecuteChanged();
         ExportTableCommand.RaiseCanExecuteChanged();
         ClearCheatsCommand.RaiseCanExecuteChanged();
+        RecheckRoutesCommand.RaiseCanExecuteChanged();
     }
 
     // ------------------------------------------------------------------ attach
@@ -615,7 +620,15 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         if (_table.Entries.Count > 0)
         {
-            Notify($"Loaded {_table.Entries.Count} saved cheat(s) for {_table.GameName}.", NoticeKind.Success);
+            string message = $"Loaded {_table.Entries.Count} saved cheat(s) for {_table.GameName}.";
+
+            // The game has just started, which is exactly when a saved route either still works or
+            // does not. There is no better moment to ask.
+            int routes = _table.Entries.Count(static entry => entry.Address.IsPointerChain);
+            if (routes > 0)
+                message += $" {routes} of them find their address through a route — re-check those now the game has restarted.";
+
+            Notify(message, NoticeKind.Success);
         }
         else
         {
@@ -907,6 +920,70 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     {
         _visibleFirst = first;
         _visibleLast = last;
+    }
+
+
+    /// <summary>True when anything in the table finds its address through a route.</summary>
+    public bool HasRoutes
+    {
+        get
+        {
+            foreach (var row in Cheats)
+            {
+                if (row.IsRoute) return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Re-resolves every saved route and reports which ones still reach a value.
+    ///
+    /// This is the half of pointer scanning that was missing. A route found today always works
+    /// today — the only thing that proves it is following it again after the game has been
+    /// restarted, which is why this exists as a step of its own rather than as part of the search.
+    /// </summary>
+    private void RecheckRoutes()
+    {
+        if (Process is not { } process)
+        {
+            Notify("Attach to the game first — a route can only be checked against a running game.", NoticeKind.Warning);
+            return;
+        }
+
+        int held = 0, lost = 0;
+        foreach (var row in Cheats)
+        {
+            if (!row.IsRoute) continue;
+
+            if (row.Entry.TryReadValue(process, out _))
+            {
+                row.Entry.LastVerified = DateTimeOffset.Now;
+                held++;
+            }
+            else
+            {
+                row.Entry.LastVerified = null;
+                lost++;
+            }
+
+            row.RaiseRouteChanged();
+        }
+
+        if (held + lost == 0)
+        {
+            Notify("Nothing in this table finds its address through a route.", NoticeKind.Info);
+            return;
+        }
+
+        CheatsChanged();
+
+        // "Reaches a value" is all this can honestly claim: a route that lands on the wrong object
+        // still reads something, and only the value on screen can tell you that.
+        Notify(lost == 0
+            ? $"All {held} route(s) still reach a value. Check one against the game to be sure it is the right one."
+            : $"{held} route(s) still reach a value, {lost} no longer resolve. Trace those again from a fresh search.",
+            lost == 0 ? NoticeKind.Success : NoticeKind.Warning);
     }
 
     // ------------------------------------------------------------------ the guided walkthrough
@@ -1221,6 +1298,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         PushFreezeSet();
         Raise(nameof(FreezeStatus));
         Raise(nameof(FreezeAll));
+        Raise(nameof(HasRoutes));
         CheatSetChanged?.Invoke();
         ClearCheatsCommand.RaiseCanExecuteChanged();
         ExportTableCommand.RaiseCanExecuteChanged();

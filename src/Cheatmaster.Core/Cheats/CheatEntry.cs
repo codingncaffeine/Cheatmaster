@@ -33,6 +33,12 @@ public sealed class CheatEntry
 
     public string Notes { get; set; } = string.Empty;
 
+    /// <summary>
+    /// When a pointer route was last seen to still reach a value. A route only proves itself after
+    /// the game has been restarted, so an old timestamp is the honest way to say "not lately".
+    /// </summary>
+    public DateTimeOffset? LastVerified { get; set; }
+
     [JsonIgnore]
     public Interpretation Interpretation =>
         new(Type, ScaleNum, ScaleDen, BigEndian, XorKey, Bias);
@@ -96,6 +102,7 @@ public sealed class CheatEntry
         FreezeValue = FreezeValue,
         Hotkey = string.Empty,
         Group = Group,
+        LastVerified = LastVerified,
         Notes = Notes
     };
 }

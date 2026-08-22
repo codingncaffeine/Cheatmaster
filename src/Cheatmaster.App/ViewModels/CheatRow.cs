@@ -44,6 +44,34 @@ public sealed class CheatRow : ObservableObject
 
     public string AddressText => Entry.Address.Display;
 
+    /// <summary>True when this entry finds its address through a pointer route rather than directly.</summary>
+    public bool IsRoute => Entry.Address.IsPointerChain;
+
+    /// <summary>
+    /// When the route was last seen to reach a value. A route that has never been checked after a
+    /// restart has not really been proved, so saying so is more use than saying nothing.
+    /// </summary>
+    public string RouteText
+    {
+        get
+        {
+            if (!IsRoute) return string.Empty;
+            if (Entry.LastVerified is not { } when) return "not checked";
+
+            var age = DateTimeOffset.Now - when;
+            if (age < TimeSpan.FromMinutes(1)) return "just now";
+            if (age < TimeSpan.FromHours(1)) return $"{(int)age.TotalMinutes}m ago";
+            if (age < TimeSpan.FromDays(1)) return $"{(int)age.TotalHours}h ago";
+            return $"{(int)age.TotalDays}d ago";
+        }
+    }
+
+    public void RaiseRouteChanged()
+    {
+        Raise(nameof(IsRoute));
+        Raise(nameof(RouteText));
+    }
+
     public string TypeLabel => Entry.Interpretation.Label;
 
     public bool IsSessionOnly => Entry.Address.IsSessionOnly;
@@ -219,6 +247,7 @@ public sealed class CheatRow : ObservableObject
         Raise(nameof(AddressText));
         Raise(nameof(TypeLabel));
         Raise(nameof(IsSessionOnly));
+        RaiseRouteChanged();
     }
 
     public string ToolTipText
