@@ -27,6 +27,9 @@ public sealed class ResultRow : ObservableObject
     public Interpretation Interpretation { get; }
     public ulong FoundValue { get; }
 
+    /// <summary>The value as it stands right now, which is what a route has to read back.</summary>
+    public ulong CurrentValue => _current;
+
     public string AddressText => Address.ToString("X", CultureInfo.InvariantCulture);
     public string TypeLabel => Interpretation.Label;
     public string ValueText => Interpretation.FormatDisplay(_current);

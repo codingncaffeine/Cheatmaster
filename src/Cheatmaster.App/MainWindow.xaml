@@ -425,6 +425,9 @@
                                                   Command="{Binding DataContext.AddSelectedCommand}"
                                                   CommandParameter="{Binding SelectedItems}" />
                                         <Separator />
+                                        <MenuItem Header="See what touches this…" Click="OnWatchResult"
+                                                  ToolTip="Wait for the game to touch this address, and see which code did" />
+                                        <Separator />
                                         <MenuItem Header="Copy address" Click="OnCopyAddress" />
                                     </ContextMenu>
                                 </DataGrid.ContextMenu>
@@ -539,6 +542,8 @@
                                         <MenuItem Header="Freeze at value…"
                                                   Command="{Binding DataContext.FreezeAtValueCommand}"
                                                   CommandParameter="{Binding SelectedItems}" />
+                                        <MenuItem Header="See what touches this…" Click="OnWatchCheat"
+                                                  ToolTip="Wait for the game to touch this address, and see which code did" />
                                         <MenuItem Header="Find a stable address…" Click="OnFindPointerPath"
                                                   ToolTip="Trace a route that still finds this value after a restart" />
                                         <Separator />

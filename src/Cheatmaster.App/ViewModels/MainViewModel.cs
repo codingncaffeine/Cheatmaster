@@ -906,6 +906,19 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     public void AddResult(ResultRow row) => AddResults([row]);
 
     /// <summary>
+    /// Adds a result to the table and puts a route on it in one step. A route traced from a scan
+    /// result has nowhere to live until the result becomes an entry.
+    /// </summary>
+    public void AddResultWithRoute(ResultRow row, PointerPath path)
+    {
+        int before = Cheats.Count;
+        AddResult(row);
+        if (Cheats.Count == before) return;
+
+        ApplyPointerPath(Cheats[^1], path);
+    }
+
+    /// <summary>
     /// Adds results in one batch: the freeze set is rebuilt once and one notice is shown, rather
     /// than once per row, which a two-hundred-row selection would otherwise turn into a stall.
     /// </summary>

@@ -9,10 +9,11 @@ public partial class PointerScanWindow : Window
 {
     private readonly PointerScanViewModel _viewModel;
 
-    public PointerScanWindow(TargetProcess process, ulong target, string description, ScanType type, ulong expectedBits)
+    public PointerScanWindow(TargetProcess process, ulong target, string description, ScanType type,
+        ulong expectedBits, int? finalOffset = null)
     {
         InitializeComponent();
-        _viewModel = new PointerScanViewModel(process, target, description, type, expectedBits);
+        _viewModel = new PointerScanViewModel(process, target, description, type, expectedBits, finalOffset);
         DataContext = _viewModel;
     }
 

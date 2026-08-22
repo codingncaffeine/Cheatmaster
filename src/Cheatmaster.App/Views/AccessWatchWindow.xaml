@@ -1,0 +1,169 @@
+<Window x:Class="Cheatmaster.App.Views.AccessWatchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="See what touches this"
+        Icon="/Assets/cheatmaster.ico"
+        Height="640" Width="820" MinHeight="520" MinWidth="640"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        WindowStyle="None"
+        ShowInTaskbar="False"
+        Closed="OnClosed">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
+                <TextBlock Text="See what touches this" Margin="14,0,0,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="12" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="20,16,20,0">
+                <TextBlock TextWrapping="Wrap" LineHeight="19" Foreground="{StaticResource TextMutedBrush}"
+                           Text="A search narrows a value down to a few addresses and then cannot tell you which one the game really uses. This waits for the game's own code to touch the address and reports what did — usually along with the object the value belongs to, which is the hard half of finding an address that still works tomorrow." />
+
+                <Border Margin="0,14,0,0" Padding="12,10" Style="{StaticResource CardBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Description}" FontSize="12.5" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding AddressText}" FontSize="11" Margin="0,2,0,0"
+                                       FontFamily="{StaticResource MonoFont}"
+                                       Foreground="{StaticResource TextFaintBrush}" />
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1" Margin="14,0" VerticalAlignment="Center"
+                                  IsChecked="{Binding WritesOnly}"
+                                  IsEnabled="{Binding IsWatching, Converter={StaticResource InverseBool}}"
+                                  Content="Only when it changes"
+                                  ToolTip="Quieter, and it stops the game far less. Leave it off to also catch the code that reads the value." />
+
+                        <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="8,0,0,0"
+                                   FontSize="11" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding HitCountText}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <Grid Grid.Row="2" Margin="20,14,20,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="260" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="330" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource CardBorder}" ClipToBounds="True">
+                    <Grid>
+                        <ListBox ItemsSource="{Binding Sites}" SelectedItem="{Binding Selected}" Margin="6"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,3">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Location}" FontSize="11.5"
+                                                       FontFamily="{StaticResource MonoFont}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding CountText}" FontSize="10.5"
+                                                       Margin="12,0,0,0" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextFaintBrush}" />
+                                        </Grid>
+                                        <TextBlock Margin="0,2,0,0" FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}">
+                                            <Run Text="{Binding WhatText, Mode=OneWay}" />
+                                            <Run Text=" · " Foreground="{StaticResource TextFaintBrush}" />
+                                            <Run Text="{Binding BaseText, Mode=OneWay}"
+                                                 FontFamily="{StaticResource MonoFont}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="380"
+                                    Visibility="{Binding FoundNothing, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Nothing yet" HorizontalAlignment="Center" FontSize="13"
+                                       Foreground="{StaticResource TextMutedBrush}" />
+                            <TextBlock Margin="0,6,0,0" TextAlignment="Center" TextWrapping="Wrap" FontSize="11.5"
+                                       Foreground="{StaticResource TextFaintBrush}"
+                                       Text="Start watching, then go and do the thing in the game that changes this value." />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="12,10"
+                        Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <TextBlock Text="WHAT IT LOOKS LIKE" Style="{StaticResource SectionLabel}" />
+                            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="11.5" LineHeight="18"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Text="{Binding BaseExplanation}" />
+
+                            <TextBlock Text="REGISTERS" Style="{StaticResource SectionLabel}" Margin="0,16,0,0" />
+                            <TextBlock Margin="0,6,0,0" FontSize="10.5" LineHeight="16"
+                                       FontFamily="{StaticResource MonoFont}"
+                                       Foreground="{StaticResource TextFaintBrush}"
+                                       Text="{Binding RegisterText}" />
+
+                            <TextBlock Text="CODE" Style="{StaticResource SectionLabel}" Margin="0,16,0,0" />
+                            <TextBlock Margin="0,6,0,0" FontSize="10.5" LineHeight="16" TextWrapping="Wrap"
+                                       FontFamily="{StaticResource MonoFont}"
+                                       Foreground="{StaticResource TextFaintBrush}"
+                                       Text="{Binding CodeText}"
+                                       ToolTip="The bar marks where the instruction stopped. It runs before the trap, so it is behind the bar." />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="16,12" Margin="0,14,0,0">
+                <Grid>
+                    <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{StaticResource TextFaintBrush}" TextTrimming="CharacterEllipsis"
+                               Margin="0,0,16,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Stop" Command="{Binding StopCommand}" Margin="0,0,8,0"
+                                Visibility="{Binding IsWatching, Converter={StaticResource BoolToVis}}" />
+                        <Button Content="Start watching" Command="{Binding StartCommand}" MinWidth="120" Margin="0,0,8,0"
+                                Visibility="{Binding IsWatching, Converter={StaticResource BoolToVisInverted}}" />
+                        <Button Content="Trace a route from here" Click="OnTraceRoute" MinWidth="170"
+                                Style="{StaticResource PrimaryButton}"
+                                IsEnabled="{Binding CanTraceRoute}"
+                                ToolTip="Search for a route to this value, using the offset the instruction just showed us" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

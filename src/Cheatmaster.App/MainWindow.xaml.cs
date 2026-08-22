@@ -197,6 +197,60 @@ public partial class MainWindow : Window
 
     private void OnSelectAllCheats(object sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
 
+    /// <summary>
+    /// Waits for the game's own code to touch an address and reports what did. This is the step a
+    /// scan cannot take: it says which of the candidate addresses the game actually uses, and
+    /// usually names the object the value belongs to as well.
+    /// </summary>
+    private void OnWatchCheat(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Process is not { } process)
+        {
+            _viewModel.Notify("Attach to the game first — there is nothing to watch until then.", NoticeKind.Warning);
+            return;
+        }
+
+        if (CheatsGrid.SelectedItem is not CheatRow row)
+        {
+            _viewModel.Notify("Select the entry you want to watch.", NoticeKind.Info);
+            return;
+        }
+
+        ulong address = row.Entry.Address.Resolve(process);
+        if (address == 0 || !row.Entry.TryReadValue(process, out ulong bits))
+        {
+            _viewModel.Notify("That entry does not currently resolve to a readable address.", NoticeKind.Warning);
+            return;
+        }
+
+        var window = new AccessWatchWindow(process, address, row.Description, row.Entry.Type, bits) { Owner = this };
+        if (window.ShowDialog() == true && window.Chosen is { } path)
+            _viewModel.ApplyPointerPath(row, path);
+    }
+
+    private void OnWatchResult(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Process is not { } process)
+        {
+            _viewModel.Notify("Attach to the game first — there is nothing to watch until then.", NoticeKind.Warning);
+            return;
+        }
+
+        if (ResultsGrid.SelectedItem is not ResultRow row)
+        {
+            _viewModel.Notify("Select the result you want to watch.", NoticeKind.Info);
+            return;
+        }
+
+        var window = new AccessWatchWindow(process, row.Address, $"Address {row.AddressText}",
+            row.Interpretation.Type, row.CurrentValue) { Owner = this };
+
+        // A route traced from a result has nowhere to live yet, so the result becomes an entry
+        // and the route goes straight onto it.
+        if (window.ShowDialog() == true && window.Chosen is { } path)
+            _viewModel.AddResultWithRoute(row, path);
+    }
+
     private void OnCopyCheatAddress(object sender, RoutedEventArgs e)
     {
         var text = new StringBuilder();

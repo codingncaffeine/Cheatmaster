@@ -33,25 +33,33 @@ public sealed class PointerScanViewModel : ObservableObject
     private bool _isBusy;
     private bool _hasScanned;
 
-    public PointerScanViewModel(TargetProcess process, ulong target, string description, ScanType type, ulong expectedBits)
+    public PointerScanViewModel(TargetProcess process, ulong target, string description, ScanType type,
+        ulong expectedBits, int? finalOffset = null)
     {
         _process = process;
         Target = target;
         Description = description;
         Type = type;
         ExpectedBits = expectedBits;
+        FinalOffset = finalOffset;
 
         ScanCommand = new RelayCommand(async () => await ScanAsync(), () => !IsBusy);
         CancelCommand = new RelayCommand(() => _cancellation?.Cancel(), () => IsBusy);
 
-        Status = "This address is on the heap, so it will be somewhere else next time the game starts. " +
-                 "Searching for a route that starts from a fixed point in the program.";
+        Status = finalOffset is { } known
+            ? $"Watching the game showed that the value sits {known:X} bytes into its object, so only " +
+              "routes that reach it that way are considered."
+            : "This address is on the heap, so it will be somewhere else next time the game starts. " +
+              "Searching for a route that starts from a fixed point in the program.";
     }
 
     public ulong Target { get; }
     public string Description { get; }
     public ScanType Type { get; }
     public ulong ExpectedBits { get; }
+
+    /// <summary>Where the value sits inside its object, when a watchpoint has already shown us.</summary>
+    public int? FinalOffset { get; }
 
     public string TargetText => Target.ToString("X", CultureInfo.InvariantCulture);
 
@@ -131,6 +139,7 @@ public sealed class PointerScanViewModel : ObservableObject
         });
 
         int depth = MaxDepth;
+        int? finalOffset = FinalOffset;
         int offset = MaxOffset;
         var process = _process;
         ulong target = Target;
@@ -142,7 +151,7 @@ public sealed class PointerScanViewModel : ObservableObject
             {
                 var map = PointerMap.Build(process, RegionFilter.Everything, progress: progress, ct: token);
                 var paths = PointerScanner.Find(process, map, target,
-                    new PointerScanOptions { MaxDepth = depth, MaxOffset = offset }, progress, token);
+                    new PointerScanOptions { MaxDepth = depth, MaxOffset = offset, FinalOffset = finalOffset }, progress, token);
 
                 // Only keep routes that read back the value we started from.
                 return PointerScanner.Verify(process, paths, Type, ExpectedBits, token);
