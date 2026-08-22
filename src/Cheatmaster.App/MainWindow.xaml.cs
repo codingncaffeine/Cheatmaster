@@ -222,6 +222,58 @@ public partial class MainWindow : Window
     private void OnSelectAllCheats(object sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
 
     /// <summary>
+    /// Opens the bytes around an address. This is where a value stops being one number and starts
+    /// being a field of an object with everything else about that object sitting next to it.
+    /// </summary>
+    private void ShowMemory(ulong address, string description)
+    {
+        if (_viewModel.Process is not { } process)
+        {
+            _viewModel.Notify("Attach to the game first — there is nothing to look at until then.", NoticeKind.Warning);
+            return;
+        }
+
+        var window = new MemoryViewWindow(process, address, description) { Owner = this };
+        window.AddRequested += (fieldAddress, type, label) => _viewModel.AddAddress(fieldAddress, type, label);
+        window.ShowDialog();
+    }
+
+    private void OnShowCheatInMemory(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Process is not { } process)
+        {
+            _viewModel.Notify("Attach to the game first — there is nothing to look at until then.", NoticeKind.Warning);
+            return;
+        }
+
+        if (CheatsGrid.SelectedItem is not CheatRow row)
+        {
+            _viewModel.Notify("Select the entry you want to look at.", NoticeKind.Info);
+            return;
+        }
+
+        ulong address = row.Entry.Address.Resolve(process);
+        if (address == 0)
+        {
+            _viewModel.Notify("That entry does not currently resolve to an address.", NoticeKind.Warning);
+            return;
+        }
+
+        ShowMemory(address, row.Description);
+    }
+
+    private void OnShowResultInMemory(object sender, RoutedEventArgs e)
+    {
+        if (ResultsGrid.SelectedItem is not ResultRow row)
+        {
+            _viewModel.Notify("Select the result you want to look at.", NoticeKind.Info);
+            return;
+        }
+
+        ShowMemory(row.Address, $"Address {row.AddressText}");
+    }
+
+    /// <summary>
     /// Waits for the game's own code to touch an address and reports what did. This is the step a
     /// scan cannot take: it says which of the candidate addresses the game actually uses, and
     /// usually names the object the value belongs to as well.
@@ -248,6 +300,7 @@ public partial class MainWindow : Window
         }
 
         var window = new AccessWatchWindow(process, address, row.Description, row.Entry.Type, bits) { Owner = this };
+        window.AddRequested += _viewModel.AddAddress;
         if (window.ShowDialog() == true && window.Chosen is { } path)
             _viewModel.ApplyPointerPath(row, path);
     }
@@ -268,6 +321,7 @@ public partial class MainWindow : Window
 
         var window = new AccessWatchWindow(process, row.Address, $"Address {row.AddressText}",
             row.Interpretation.Type, row.CurrentValue) { Owner = this };
+        window.AddRequested += _viewModel.AddAddress;
 
         // A route traced from a result has nowhere to live yet, so the result becomes an entry
         // and the route goes straight onto it.

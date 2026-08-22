@@ -5,7 +5,7 @@ namespace Cheatmaster.App.Views;
 
 public partial class ImportReportWindow : Window
 {
-    private ImportReportWindow(ImportReport report)
+    public ImportReportWindow(ImportReport report)
     {
         InitializeComponent();
         DataContext = report;

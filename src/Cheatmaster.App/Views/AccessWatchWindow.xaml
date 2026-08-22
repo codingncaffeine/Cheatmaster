@@ -157,6 +157,10 @@
                                 Visibility="{Binding IsWatching, Converter={StaticResource BoolToVis}}" />
                         <Button Content="Start watching" Command="{Binding StartCommand}" MinWidth="120" Margin="0,0,8,0"
                                 Visibility="{Binding IsWatching, Converter={StaticResource BoolToVisInverted}}" />
+                        <Button Content="Show the object" Click="OnShowObject" MinWidth="130" Margin="0,0,8,0"
+                                Style="{StaticResource GhostButton}"
+                                IsEnabled="{Binding CanTraceRoute}"
+                                ToolTip="Look at the bytes of the object this value belongs to" />
                         <Button Content="Trace a route from here" Click="OnTraceRoute" MinWidth="170"
                                 Style="{StaticResource PrimaryButton}"
                                 IsEnabled="{Binding CanTraceRoute}"

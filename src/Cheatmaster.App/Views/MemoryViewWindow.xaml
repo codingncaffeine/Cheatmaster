@@ -1,0 +1,206 @@
+<Window x:Class="Cheatmaster.App.Views.MemoryViewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Memory"
+        Icon="/Assets/cheatmaster.ico"
+        Height="620" Width="900" MinHeight="480" MinWidth="700"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        WindowStyle="None"
+        ShowInTaskbar="False"
+        Closed="OnClosed">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
+                <TextBlock Text="Memory" Margin="14,0,0,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="12" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="20,16,20,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBox x:Name="AddressBox" Width="220" Padding="8,6" VerticalAlignment="Center"
+                             Style="{StaticResource MonoTextBox}"
+                             Text="{Binding AddressInput, UpdateSourceTrigger=PropertyChanged}"
+                             KeyDown="OnAddressKeyDown"
+                             ToolTip="A hex address, or a module and an offset such as game.exe+1A2B" />
+                    <Button Content="Go" Command="{Binding GoCommand}" Margin="6,0,0,0" MinWidth="54" />
+                    <Button Content="Back" Command="{Binding BackCommand}" Margin="6,0,0,0" MinWidth="60"
+                            Style="{StaticResource GhostButton}" />
+                    <Button Content="Follow pointer" Command="{Binding FollowCommand}" Margin="6,0,0,0"
+                            Style="{StaticResource GhostButton}"
+                            ToolTip="Jump to wherever the bytes under the cursor point" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <CheckBox Content="Keep reading" IsChecked="{Binding Live}" VerticalAlignment="Center"
+                              Margin="0,0,12,0"
+                              ToolTip="Re-read twice a second and mark the bytes that moved" />
+                    <Button Content="&#xE70E;" Command="{Binding PageUpCommand}" Style="{StaticResource IconButton}"
+                            FontFamily="{StaticResource IconFont}" ToolTip="Back one page" />
+                    <Button Content="&#xE70D;" Command="{Binding PageDownCommand}" Style="{StaticResource IconButton}"
+                            FontFamily="{StaticResource IconFont}" ToolTip="On one page" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="2" Margin="20,14,20,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="420" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="280" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource CardBorder}" ClipToBounds="True">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                  Padding="10,8">
+                        <ItemsControl ItemsSource="{Binding Lines}" PreviewMouseLeftButtonUp="OnCellClicked">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                                        <TextBlock Text="{Binding AddressText}" Width="110" FontSize="11.5"
+                                                   FontFamily="{StaticResource MonoFont}"
+                                                   Foreground="{StaticResource TextFaintBrush}" />
+
+                                        <ItemsControl ItemsSource="{Binding Cells}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Padding="3,1" Margin="1,0" CornerRadius="2"
+                                                            Background="Transparent">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                        <Setter Property="Background"
+                                                                                Value="{StaticResource SelectionBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding Text}" FontSize="11.5"
+                                                                   FontFamily="{StaticResource MonoFont}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground"
+                                                                            Value="{StaticResource TextMutedBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Changed}" Value="True">
+                                                                            <Setter Property="Foreground"
+                                                                                    Value="{StaticResource AccentBrush}" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <TextBlock Text="{Binding Ascii}" Margin="12,0,0,0" FontSize="11.5"
+                                                   FontFamily="{StaticResource MonoFont}"
+                                                   Foreground="{StaticResource TextFaintBrush}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="12,10">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <TextBlock Text="UNDER THE CURSOR" Style="{StaticResource SectionLabel}" />
+                            <TextBlock Text="{Binding SelectedAddressText}" Margin="0,6,0,0" FontSize="13"
+                                       FontFamily="{StaticResource MonoFont}" />
+
+                            <ItemsControl ItemsSource="{Binding Fields}" Margin="0,12,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,7">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="58" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextFaintBrush}" />
+
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Value}" FontSize="12"
+                                                           FontFamily="{StaticResource MonoFont}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{StaticResource TextBrush}" />
+                                                <TextBlock Text="{Binding Detail}" FontSize="10.5"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{StaticResource TextFaintBrush}"
+                                                           Visibility="{Binding Detail, Converter={StaticResource NotEmptyToVis}}" />
+                                            </StackPanel>
+
+                                            <Button Grid.Column="2" Content="Add" Click="OnAddField" Tag="{Binding}"
+                                                    Style="{StaticResource GhostButton}" Padding="8,2" MinHeight="22"
+                                                    FontSize="11" VerticalAlignment="Center"
+                                                    IsEnabled="{Binding IsReadable}"
+                                                    ToolTip="Add this field to the cheat table" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" FontSize="11" LineHeight="17"
+                                       Foreground="{StaticResource TextFaintBrush}"
+                                       Text="Bytes that moved since the last read are picked out. Play the game with this open and the fields of the object show themselves." />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="16,12" Margin="0,14,0,0">
+                <Grid>
+                    <TextBlock VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"
+                               Margin="0,0,16,0" Foreground="{StaticResource TextFaintBrush}">
+                        <Run Text="{Binding Description, Mode=OneWay}" />
+                        <Run Text=" · " />
+                        <Run Text="{Binding Status, Mode=OneWay}" />
+                    </TextBlock>
+                    <Button Content="Close" Click="OnClose" MinWidth="100" HorizontalAlignment="Right"
+                            Style="{StaticResource PrimaryButton}" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

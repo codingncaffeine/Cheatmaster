@@ -1031,6 +1031,30 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     public void AddResult(ResultRow row) => AddResults([row]);
 
     /// <summary>
+    /// Saves one address straight into the table, for the memory view — where a field is picked
+    /// out by looking at an object rather than by searching for a value.
+    /// </summary>
+    public void AddAddress(ulong address, ScanType type, string description)
+    {
+        if (Process is null) return;
+
+        var entry = new CheatEntry
+        {
+            Description = description,
+            Address = AddressSpec.ForAddress(Process, address),
+            Type = type
+        };
+
+        _table.Entries.Add(entry);
+        var row = new CheatRow(entry, this);
+        Cheats.Add(row);
+        row.Refresh(Process);
+
+        CheatsChanged();
+        Notify($"Added {entry.Address.Display} to the cheat table.", NoticeKind.Success);
+    }
+
+    /// <summary>
     /// Adds a result to the table and puts a route on it in one step. A route traced from a scan
     /// result has nowhere to live until the result becomes an entry.
     /// </summary>

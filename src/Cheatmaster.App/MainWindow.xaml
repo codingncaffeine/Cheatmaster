@@ -502,6 +502,8 @@
                                         <Separator />
                                         <MenuItem Header="See what touches this…" Click="OnWatchResult"
                                                   ToolTip="Wait for the game to touch this address, and see which code did" />
+                                        <MenuItem Header="Show in memory…" Click="OnShowResultInMemory"
+                                                  ToolTip="Look at the bytes around this address, and what else is in the same object" />
                                         <Separator />
                                         <MenuItem Header="Copy address" Click="OnCopyAddress" />
                                     </ContextMenu>
@@ -624,6 +626,8 @@
                                                   CommandParameter="{Binding SelectedItems}" />
                                         <MenuItem Header="See what touches this…" Click="OnWatchCheat"
                                                   ToolTip="Wait for the game to touch this address, and see which code did" />
+                                        <MenuItem Header="Show in memory…" Click="OnShowCheatInMemory"
+                                                  ToolTip="Look at the bytes around this address, and what else is in the same object" />
                                         <MenuItem Header="Find a stable address…" Click="OnFindPointerPath"
                                                   ToolTip="Trace a route that still finds this value after a restart" />
                                         <Separator />

@@ -23,6 +23,9 @@ public partial class AccessWatchWindow : Window
     /// <summary>The route the user settled on, or null if they closed without tracing one.</summary>
     public PointerPath? Chosen { get; private set; }
 
+    /// <summary>A field picked out of the object, on its way to the cheat table.</summary>
+    public event Action<ulong, ScanType, string>? AddRequested;
+
     /// <summary>
     /// Hands the offset the instruction just revealed to the pointer search. Knowing where the
     /// value sits inside its object is what turns that search from a guess into a lookup.
@@ -43,6 +46,20 @@ public partial class AccessWatchWindow : Window
         Chosen = path;
         DialogResult = true;
         Close();
+    }
+
+    /// <summary>
+    /// The pairing that makes both halves worth more: knowing the object, everything else about it
+    /// is sitting next to the value — all the stats of one character rather than one at a time.
+    /// </summary>
+    private void OnShowObject(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Selected?.Site.Base is not { } guess) return;
+
+        var window = new MemoryViewWindow(_process, guess.Value,
+            $"{_viewModel.Description} — the object it belongs to") { Owner = this };
+        window.AddRequested += (address, type, label) => AddRequested?.Invoke(address, type, label);
+        window.ShowDialog();
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
