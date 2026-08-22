@@ -1,0 +1,72 @@
+<Window x:Class="Cheatmaster.App.Views.ImportReportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="What could not be imported"
+        Icon="/Assets/cheatmaster.ico"
+        Height="480" Width="620" MinHeight="320" MinWidth="480"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="12.5"
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        WindowStyle="None"
+        ShowInTaskbar="False">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
+                <TextBlock Text="What could not be imported" Margin="14,0,0,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="12" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="20,16,20,0">
+                <TextBlock Text="{Binding Summary}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" LineHeight="19"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Text="Most of a Cheat Engine table is an address, a type and a chain of offsets, and all of that comes across. What does not is the half of Cheat Engine that is a programming environment. These are listed rather than dropped, because an entry that looks imported and quietly does nothing is worse than one that was refused." />
+            </StackPanel>
+
+            <Border Grid.Row="2" Margin="20,14,20,0" Style="{StaticResource CardBorder}" ClipToBounds="True">
+                <ListBox ItemsSource="{Binding Skipped}" Margin="6"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,3">
+                                <TextBlock Text="{Binding Description}" FontSize="12.5" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextBrush}" />
+                                <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextFaintBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="16,12" Margin="0,14,0,0">
+                <Button Content="Close" Click="OnClose" MinWidth="100" HorizontalAlignment="Right"
+                        Style="{StaticResource PrimaryButton}" />
+            </Border>
+        </Grid>
+    </Border>
+</Window>

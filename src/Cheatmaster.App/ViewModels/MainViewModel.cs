@@ -1284,13 +1284,29 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "Import cheat table",
-            Filter = "Cheatmaster table (*.cmt)|*.cmt|All files (*.*)|*.*"
+            Filter = "Cheat tables (*.cmt;*.CT)|*.cmt;*.CT|Cheatmaster table (*.cmt)|*.cmt"
+                     + "|Cheat Engine table (*.CT)|*.CT|All files (*.*)|*.*"
         };
         if (dialog.ShowDialog() != true) return;
+
+        if (".CT".Equals(System.IO.Path.GetExtension(dialog.FileName), StringComparison.OrdinalIgnoreCase))
+        {
+            ImportCheatEngineTable(dialog.FileName);
+            return;
+        }
 
         var loaded = CheatTable.Load(dialog.FileName);
         if (loaded is null)
         {
+            // A Cheat Engine table saved under another name still reads fine, so it is worth a try
+            // before telling someone their file is no good.
+            var fallback = CheatEngineTable.Load(dialog.FileName);
+            if (!fallback.Failed)
+            {
+                Adopt(fallback);
+                return;
+            }
+
             Notify("That file is not a readable cheat table.", NoticeKind.Error);
             return;
         }
@@ -1304,6 +1320,37 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         CheatsChanged();
         Notify($"Imported {loaded.Entries.Count} entr{(loaded.Entries.Count == 1 ? "y" : "ies")}.", NoticeKind.Success);
+    }
+
+    /// <summary>Shows what a Cheat Engine table could not bring across, when anything could not.</summary>
+    public Action<ImportReport>? ShowImportReport { get; set; }
+
+    private void ImportCheatEngineTable(string path)
+    {
+        var report = CheatEngineTable.Load(path);
+        if (report.Failed)
+        {
+            Notify(report.Error!, NoticeKind.Error);
+            return;
+        }
+
+        Adopt(report);
+    }
+
+    private void Adopt(ImportReport report)
+    {
+        foreach (var entry in report.Entries)
+        {
+            _table.Entries.Add(entry);
+            Cheats.Add(new CheatRow(entry, this));
+        }
+
+        if (report.Entries.Count > 0) CheatsChanged();
+
+        Notify(report.Summary, report.Skipped.Count > 0 ? NoticeKind.Warning : NoticeKind.Success);
+
+        // Never quietly: an entry that looks imported and does nothing is worse than one refused.
+        if (report.Skipped.Count > 0) ShowImportReport?.Invoke(report);
     }
 
     // ------------------------------------------------------------------ misc

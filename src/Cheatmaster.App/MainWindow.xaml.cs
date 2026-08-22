@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         _viewModel.PromptForValue = (title, message, initial) =>
             ValuePromptWindow.Ask(this, title, message, initial,
                 "Accepts decimals and hex (0x1F). Each entry is written using its own storage type.");
+        _viewModel.ShowImportReport = report => ImportReportWindow.Show(this, report);
         _hotkeys.Pressed += OnHotkeyPressed;
 
         SourceInitialized += (_, _) =>
