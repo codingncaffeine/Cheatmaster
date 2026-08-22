@@ -78,15 +78,6 @@ public sealed class LibraryGroupRow : ObservableObject
         Raise(nameof(DisplayName));
         Raise(nameof(IsUngrouped));
     }
-
-    public void Refreshed()
-    {
-        Raise(nameof(Count));
-        Raise(nameof(FrozenCount));
-        Raise(nameof(AnyFrozen));
-        Raise(nameof(Summary));
-        Raise(nameof(HeldValue));
-    }
 }
 
 /// <summary>One saved game as it appears in the library grid.</summary>
