@@ -43,10 +43,15 @@ public static partial class GameIdentity
             // Each probe is isolated. A missing folder or a permission error on one storefront
             // must not take the others down with it — losing every hint because one directory
             // could not be listed is how a game ends up with no cover for no good reason.
-            var directory = new DirectoryInfo(Path.GetDirectoryName(path) ?? path);
-
-            Probe(() => AddSteam(hints, directory));
-            Probe(() => AddGog(hints, directory));
+            // A library synced from another machine can hold a Windows path on Linux, which has
+            // no folder here to look in; the path itself still names the game.
+            string? folder = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder))
+            {
+                var directory = new DirectoryInfo(folder);
+                Probe(() => AddSteam(hints, directory));
+                Probe(() => AddGog(hints, directory));
+            }
             Probe(() => AddEpic(hints, path));
             Probe(() => AddStoreFolder(hints, path));
         }
@@ -171,7 +176,8 @@ public static partial class GameIdentity
     /// <summary>The folder a store installs into is usually the title, minus punctuation.</summary>
     private static void AddStoreFolder(List<GameIdentityHint> hints, string exePath)
     {
-        string[] parts = exePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        // Either separator: a Windows path read on Linux splits the same way.
+        string[] parts = exePath.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
 
         for (int i = 0; i < parts.Length - 1; i++)
         {

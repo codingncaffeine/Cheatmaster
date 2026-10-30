@@ -1,7 +1,3 @@
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using Cheatmaster.Core.Native;
-
 namespace Cheatmaster.Core.Memory;
 
 public sealed record ModuleEntry(string Name, string Path, ulong Base, uint Size)
@@ -13,12 +9,12 @@ public sealed record ModuleEntry(string Name, string Path, ulong Base, uint Size
 /// <summary>A contiguous span of bytes inside a read buffer that came back intact.</summary>
 public readonly record struct ValidRun(int Offset, int Length);
 
-/// <summary>An opened handle to the process being edited, plus every read/write primitive built on it.</summary>
+/// <summary>An opened process being edited, plus every read/write primitive built on it.</summary>
 public sealed class TargetProcess : IDisposable
 {
     private const int PageSize = 4096;
 
-    private nint _handle;
+    private IProcessBackend? _backend;
     private List<ModuleEntry>? _modules;
 
     public int Pid { get; }
@@ -27,9 +23,9 @@ public sealed class TargetProcess : IDisposable
     public bool Is64Bit { get; }
     public bool CanWrite { get; private set; }
 
-    private TargetProcess(nint handle, int pid, string name, string imagePath, bool is64Bit, bool canWrite)
+    internal TargetProcess(IProcessBackend backend, int pid, string name, string imagePath, bool is64Bit, bool canWrite)
     {
-        _handle = handle;
+        _backend = backend;
         Pid = pid;
         Name = name;
         ImagePath = imagePath;
@@ -37,125 +33,24 @@ public sealed class TargetProcess : IDisposable
         CanWrite = canWrite;
     }
 
-    public bool IsOpen => _handle != 0;
+    public bool IsOpen => _backend is not null;
 
-    public bool IsRunning
-    {
-        get
-        {
-            if (_handle == 0) return false;
-            return Win32.GetExitCodeProcess(_handle, out uint code) && code == 259; // STILL_ACTIVE
-        }
-    }
+    public bool IsRunning => _backend?.IsRunning ?? false;
 
     public static TargetProcess? Open(int pid, out string error)
     {
-        error = string.Empty;
-        Privileges.EnableDebugPrivilege();
+        if (OperatingSystem.IsWindows()) return WindowsProcess.Open(pid, out error);
+        if (OperatingSystem.IsLinux()) return LinuxProcess.Open(pid, out error);
 
-        bool canWrite = true;
-        nint handle = Win32.OpenProcess(ProcessAccess.ScanAndEdit, false, (uint)pid);
-        if (handle == 0)
-        {
-            int err = Marshal.GetLastPInvokeError();
-            handle = Win32.OpenProcess(ProcessAccess.ReadOnly, false, (uint)pid);
-            canWrite = false;
-            if (handle == 0)
-            {
-                error = DescribeOpenFailure(Marshal.GetLastPInvokeError() is 0 ? err : Marshal.GetLastPInvokeError());
-                return null;
-            }
-        }
-
-        string path = QueryImagePath(handle);
-        string name = string.IsNullOrEmpty(path) ? $"pid {pid}" : System.IO.Path.GetFileName(path);
-        bool is64 = QueryIs64Bit(handle);
-
-        return new TargetProcess(handle, pid, name, path, is64, canWrite);
+        error = "Attaching to a process is not supported on this system.";
+        return null;
     }
 
-    private static string DescribeOpenFailure(int err) => err switch
-    {
-        5 => Privileges.IsElevated
-            ? "Access denied. The target is likely protected or running at a higher integrity level."
-            : "Access denied. Restart Cheatmaster as administrator and try again.",
-        87 => "The process is no longer running.",
-        _ => $"OpenProcess failed with Win32 error {err}."
-    };
-
-    private static unsafe string QueryImagePath(nint handle)
-    {
-        char[] buf = new char[1024];
-        uint size = (uint)buf.Length;
-        fixed (char* p = buf)
-        {
-            if (Win32.QueryFullProcessImageName(handle, 0, p, ref size) && size > 0)
-                return new string(buf, 0, (int)size);
-        }
-        return string.Empty;
-    }
-
-    private static bool QueryIs64Bit(nint handle)
-    {
-        // IMAGE_FILE_MACHINE_UNKNOWN for processMachine means the process is running natively.
-        if (Win32.IsWow64Process2(handle, out ushort processMachine, out _))
-            return processMachine == 0;
-        return Environment.Is64BitOperatingSystem;
-    }
-
-    public IReadOnlyList<ModuleEntry> Modules => _modules ??= LoadModules();
+    public IReadOnlyList<ModuleEntry> Modules => _modules ??= _backend?.LoadModules() ?? [];
 
     public ModuleEntry? MainModule => Modules.Count > 0 ? Modules[0] : null;
 
     public void RefreshModules() => _modules = null;
-
-    private unsafe List<ModuleEntry> LoadModules()
-    {
-        var list = new List<ModuleEntry>();
-        if (_handle == 0) return list;
-
-        int capacity = 512;
-        for (int attempt = 0; attempt < 4; attempt++)
-        {
-            nint[] handles = new nint[capacity];
-            uint needed;
-            fixed (nint* p = handles)
-            {
-                if (!Win32.EnumProcessModulesEx(_handle, p, (uint)(handles.Length * sizeof(nint)), out needed, Win32.ListModulesAll))
-                    return list;
-            }
-
-            int count = (int)(needed / sizeof(nint));
-            if (count > capacity)
-            {
-                capacity = count + 64;
-                continue;
-            }
-
-            char[] nameBuf = new char[512];
-            for (int i = 0; i < count; i++)
-            {
-                string path;
-                fixed (char* np = nameBuf)
-                {
-                    uint len = Win32.GetModuleFileNameEx(_handle, handles[i], np, (uint)nameBuf.Length);
-                    path = len > 0 ? new string(nameBuf, 0, (int)len) : string.Empty;
-                }
-
-                if (!Win32.GetModuleInformation(_handle, handles[i], out ModuleInfo mi, (uint)sizeof(ModuleInfo)))
-                    continue;
-
-                list.Add(new ModuleEntry(
-                    string.IsNullOrEmpty(path) ? "?" : System.IO.Path.GetFileName(path),
-                    path,
-                    (ulong)mi.BaseOfDll,
-                    mi.SizeOfImage));
-            }
-            break;
-        }
-
-        return list;
-    }
 
     public ModuleEntry? FindModule(string name)
     {
@@ -171,69 +66,39 @@ public sealed class TargetProcess : IDisposable
     public List<MemoryRegion> EnumerateRegions(RegionFilter filter)
     {
         var result = new List<MemoryRegion>();
-        if (_handle == 0) return result;
+        if (_backend is null) return result;
 
-        ulong address = filter.Start;
-        int mbiSize = Marshal.SizeOf<MemoryBasicInformation>();
+        var raw = new List<MemoryRegion>();
+        _backend.QueryRegions(filter.Start, filter.End, Modules, raw);
 
-        while (address < filter.End)
+        foreach (var region in raw)
         {
-            if (Win32.VirtualQueryEx(_handle, (nuint)address, out MemoryBasicInformation mbi, (nuint)mbiSize) == 0)
-                break;
+            if (!filter.Matches(region)) continue;
 
-            ulong size = mbi.RegionSize;
-            if (size == 0) break;
-
-            if (mbi.State == MemState.Commit)
+            var clamped = filter.Clamp(region);
+            // Merge with the previous region when they touch, so a value straddling the
+            // boundary is still found.
+            if (result.Count > 0 && result[^1].End == clamped.Base)
             {
-                var region = new MemoryRegion(mbi.BaseAddress, size, mbi.Protect, mbi.Type);
-                if (filter.Matches(region))
-                {
-                    var clamped = filter.Clamp(region);
-                    // Merge with the previous region when they touch, so a value straddling the
-                    // boundary is still found.
-                    if (result.Count > 0)
-                    {
-                        var prev = result[^1];
-                        if (prev.End == clamped.Base)
-                        {
-                            result[^1] = prev with { Size = prev.Size + clamped.Size };
-                            goto advance;
-                        }
-                    }
-                    result.Add(clamped);
-                }
+                var prev = result[^1];
+                result[^1] = prev with { Size = prev.Size + clamped.Size };
+                continue;
             }
-
-        advance:
-            ulong next = mbi.BaseAddress + size;
-            if (next <= address) break;
-            address = next;
+            result.Add(clamped);
         }
 
         return result;
     }
 
-    public unsafe int Read(ulong address, Span<byte> buffer)
-    {
-        if (_handle == 0 || buffer.Length == 0) return 0;
-        fixed (byte* p = buffer)
-        {
-            if (Win32.ReadProcessMemory(_handle, (nuint)address, p, (nuint)buffer.Length, out nuint read))
-                return (int)read;
-        }
-        return 0;
-    }
+    public int Read(ulong address, Span<byte> buffer) =>
+        _backend is null || buffer.Length == 0 ? 0 : _backend.Read(address, buffer);
 
     public bool ReadExact(ulong address, Span<byte> buffer) => Read(address, buffer) == buffer.Length;
 
     public unsafe T ReadValue<T>(ulong address, T fallback = default) where T : unmanaged
     {
         T value = default;
-        int size = sizeof(T);
-        if (Win32.ReadProcessMemory(_handle, (nuint)address, (byte*)&value, (nuint)size, out nuint read) && (int)read == size)
-            return value;
-        return fallback;
+        return Read(address, new Span<byte>(&value, sizeof(T))) == sizeof(T) ? value : fallback;
     }
 
     /// <summary>
@@ -284,57 +149,8 @@ public sealed class TargetProcess : IDisposable
         return total;
     }
 
-    public unsafe bool Write(ulong address, ReadOnlySpan<byte> data)
-    {
-        if (_handle == 0 || data.Length == 0) return false;
-
-        fixed (byte* p = data)
-        {
-            if (Win32.WriteProcessMemory(_handle, (nuint)address, p, (nuint)data.Length, out nuint written) && (int)written == data.Length)
-                return true;
-        }
-
-        return WriteWithProtectionLifted(address, data);
-    }
-
-    /// <summary>
-    /// Lifts page protection, writes, and restores it.
-    ///
-    /// VirtualProtectEx reports the previous protection of the FIRST page only, so restoring
-    /// that one value across a multi-page span would stamp it onto every page it touched — a
-    /// write straddling a page boundary could strip execute rights from the following page and
-    /// crash the target later. Each page is therefore lifted and restored on its own.
-    /// </summary>
-    private unsafe bool WriteWithProtectionLifted(ulong address, ReadOnlySpan<byte> data)
-    {
-        ulong end = address + (ulong)data.Length;
-        var restore = new List<(ulong Base, nuint Size, uint Old)>(2);
-
-        try
-        {
-            for (ulong page = address & ~(ulong)(PageSize - 1); page < end; page += PageSize)
-            {
-                ulong lo = Math.Max(page, address);
-                ulong hi = Math.Min(page + PageSize, end);
-                nuint size = (nuint)(hi - lo);
-
-                if (!Win32.VirtualProtectEx(_handle, (nuint)lo, size, PageProtect.ExecuteReadWrite, out uint old))
-                    return false;
-                restore.Add((lo, size, old));
-            }
-
-            fixed (byte* p = data)
-            {
-                return Win32.WriteProcessMemory(_handle, (nuint)address, p, (nuint)data.Length, out nuint written)
-                       && (int)written == data.Length;
-            }
-        }
-        finally
-        {
-            foreach (var (pageBase, size, old) in restore)
-                Win32.VirtualProtectEx(_handle, (nuint)pageBase, size, old, out _);
-        }
-    }
+    public bool Write(ulong address, ReadOnlySpan<byte> data) =>
+        _backend is not null && data.Length > 0 && _backend.Write(address, data);
 
     public unsafe bool WriteValue<T>(ulong address, T value) where T : unmanaged
     {
@@ -362,10 +178,7 @@ public sealed class TargetProcess : IDisposable
 
     public void Dispose()
     {
-        if (_handle != 0)
-        {
-            Win32.CloseHandle(_handle);
-            _handle = 0;
-        }
+        _backend?.Dispose();
+        _backend = null;
     }
 }

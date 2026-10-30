@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using Cheatmaster.Core.Native;
+using Cheatmaster.Core.Native.Linux;
 
 namespace Cheatmaster.Core.Memory;
 
@@ -26,10 +28,35 @@ public static class ProcessList
         "svchost", "csrss", "wininit", "winlogon", "services", "lsass", "smss", "dwm",
         "fontdrvhost", "spoolsv", "conhost", "sihost", "taskhostw", "ctfmon", "explorer",
         "runtimebroker", "searchhost", "shellexperiencehost", "textinputhost", "registry",
-        "memory compression", "system", "idle", "audiodg", "wudfhost", "dllhost"
+        "memory compression", "system", "idle", "audiodg", "wudfhost", "dllhost",
+        // Wine's own services, which every Wine prefix runs alongside the game.
+        "winedevice", "plugplay", "rpcss", "tabtip", "start", "winedbg", "steam",
+        // The Linux desktop itself: never what anyone wants to attach to.
+        "systemd", "dbus-daemon", "dbus-broker", "pipewire", "pipewire-pulse", "wireplumber", "pulseaudio",
+        "xwayland", "xorg", "kwin_wayland", "kwin_x11", "plasmashell", "ksmserver", "kded6", "kded5",
+        "gnome-shell", "mutter", "xdg-desktop-portal", "xdg-desktop-portal-kde", "xdg-desktop-portal-gnome",
+        "xdg-desktop-portal-gtk", "wineserver", "steamwebhelper", "gamescope", "at-spi-bus-launcher",
+        "at-spi2-registryd", "gvfsd", "baloo_file", "kwalletd6", "kwalletd5", "gnome-keyring-daemon", "polkit-kde-authentication-agent-1"
     ];
 
     public static List<ProcessCandidate> Enumerate(bool includeSystem = false)
+    {
+        var list = OperatingSystem.IsWindows() ? EnumerateWindows(includeSystem) : EnumerateLinux(includeSystem);
+
+        list.Sort(static (a, b) =>
+        {
+            if (a.LooksLikeGame != b.LooksLikeGame) return a.LooksLikeGame ? -1 : 1;
+            if (a.HasWindow != b.HasWindow) return a.HasWindow ? -1 : 1;
+            int ws = b.WorkingSetBytes.CompareTo(a.WorkingSetBytes);
+            if (ws != 0) return ws;
+            return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+        });
+
+        return list;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static List<ProcessCandidate> EnumerateWindows(bool includeSystem)
     {
         Privileges.EnableDebugPrivilege();
         var list = new List<ProcessCandidate>();
@@ -65,14 +92,48 @@ public static class ProcessList
             }
         }
 
-        list.Sort(static (a, b) =>
+        return list;
+    }
+
+    /// <summary>
+    /// Linux has no window titles per process, so they come from X11 where there is one, and a
+    /// Wine program is named by the Windows executable it is running rather than by "wine64".
+    /// </summary>
+    private static List<ProcessCandidate> EnumerateLinux(bool includeSystem)
+    {
+        var list = new List<ProcessCandidate>();
+        int self = Environment.ProcessId;
+        var titles = X11Windows.TitlesByPid();
+
+        foreach (int pid in ProcFs.ProcessIds())
         {
-            if (a.LooksLikeGame != b.LooksLikeGame) return a.LooksLikeGame ? -1 : 1;
-            if (a.HasWindow != b.HasWindow) return a.HasWindow ? -1 : 1;
-            int ws = b.WorkingSetBytes.CompareTo(a.WorkingSetBytes);
-            if (ws != 0) return ws;
-            return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
-        });
+            if (pid == self) continue;
+
+            string[] cmdline = ProcFs.ReadCmdline(pid);
+            if (cmdline.Length == 0) continue; // kernel threads, and processes already gone
+
+            bool isWine = Wine.IsWindowsProgram(cmdline[0]);
+            string name = isWine ? Wine.FileName(cmdline[0]) : ProcFs.ReadComm(pid);
+            if (name.Length == 0) continue;
+
+            string stem = isWine ? Path.GetFileNameWithoutExtension(name) : name;
+            bool isSystem = IsSystemName(stem);
+            if (isSystem && !includeSystem) continue;
+
+            string path = isWine ? Wine.ToUnixPath(pid, cmdline[0]) : ProcFs.ReadExe(pid);
+            if (isWine && path.Length == 0) path = cmdline[0];
+            if (!includeSystem && path.Length == 0 && !isWine) continue; // not ours to look at
+
+            titles.TryGetValue(pid, out string? title);
+            long rss = ProcFs.ReadResidentBytes(pid);
+            bool hasWindow = !string.IsNullOrEmpty(title);
+
+            // Native Wayland windows cannot be seen from here, so a big Windows program under
+            // Wine counts as a likely game even without a title.
+            bool looksLikeGame = !isSystem && rss > 150L * 1024 * 1024 && (hasWindow || isWine);
+
+            list.Add(new ProcessCandidate(pid, name, title ?? string.Empty, path, hasWindow, looksLikeGame, rss));
+        }
 
         return list;
     }
@@ -98,6 +159,7 @@ public static class ProcessList
         catch { return 0; }
     }
 
+    [SupportedOSPlatform("windows")]
     private static string SafePath(int pid)
     {
         nint h = Win32.OpenProcess(ProcessAccess.Minimal, false, (uint)pid);
@@ -112,15 +174,6 @@ public static class ProcessList
         }
     }
 
-    private static unsafe string QueryPath(nint handle)
-    {
-        char[] buf = new char[1024];
-        uint size = (uint)buf.Length;
-        fixed (char* p = buf)
-        {
-            if (Win32.QueryFullProcessImageName(handle, 0, p, ref size) && size > 0)
-                return new string(buf, 0, (int)size);
-        }
-        return string.Empty;
-    }
+    [SupportedOSPlatform("windows")]
+    private static string QueryPath(nint handle) => Memory.WindowsProcess.QueryImagePath(handle);
 }

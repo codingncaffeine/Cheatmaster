@@ -12,9 +12,9 @@ public sealed class ValueFreezer : IDisposable
     private readonly record struct Pinned(CheatEntry Entry, ScanType Type, ulong Bits, int Width);
 
     private readonly Lock _gate = new();
-    private readonly PeriodicTimer _timer;
+    private readonly TimeSpan _interval;
     private readonly CancellationTokenSource _cancellation = new();
-    private readonly Task _loop;
+    private readonly Thread _loop;
 
     private Pinned[] _pinned = [];
     private TargetProcess? _process;
@@ -22,8 +22,12 @@ public sealed class ValueFreezer : IDisposable
 
     public ValueFreezer(TimeSpan? interval = null)
     {
-        _timer = new PeriodicTimer(interval ?? TimeSpan.FromMilliseconds(40));
-        _loop = Task.Run(RunAsync);
+        _interval = interval ?? TimeSpan.FromMilliseconds(40);
+
+        // A thread of its own rather than a pool timer: a scan fills the thread pool with
+        // parallel work, and a freeze that waits behind it is a freeze that lets go.
+        _loop = new Thread(Run) { IsBackground = true, Name = "Cheatmaster freezer" };
+        _loop.Start();
     }
 
     /// <summary>Total successful writes since start, so the UI can show that freezing is live.</summary>
@@ -62,16 +66,19 @@ public sealed class ValueFreezer : IDisposable
         lock (_gate) _pinned = [.. list];
     }
 
-    private async Task RunAsync()
+    private void Run()
     {
-        try
+        var token = _cancellation.Token;
+        while (!token.WaitHandle.WaitOne(_interval))
         {
-            while (await _timer.WaitForNextTickAsync(_cancellation.Token).ConfigureAwait(false))
+            try
+            {
                 Tick();
-        }
-        catch (OperationCanceledException)
-        {
-            // Shutting down.
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // One bad write must not end freezing for every other entry.
+            }
         }
     }
 
@@ -106,8 +113,6 @@ public sealed class ValueFreezer : IDisposable
     public void Dispose()
     {
         _cancellation.Cancel();
-        _timer.Dispose();
-        try { _loop.Wait(TimeSpan.FromSeconds(1)); } catch { /* shutting down */ }
-        _cancellation.Dispose();
+        _loop.Join(TimeSpan.FromSeconds(1));
     }
 }

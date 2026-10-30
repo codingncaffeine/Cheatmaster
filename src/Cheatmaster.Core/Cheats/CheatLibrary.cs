@@ -34,7 +34,7 @@ public sealed class CheatLibrary
     }
 
     public static string DefaultRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify),
         "Cheatmaster", "Library");
 
     public string RootDirectory { get; }

@@ -19,6 +19,7 @@ public static class Privileges
     {
         if (_attempted) return _enabled;
         _attempted = true;
+        if (!OperatingSystem.IsWindows()) return false;
 
         if (!Win32.OpenProcessToken(Win32.GetCurrentProcess(), Win32.TokenAdjustPrivileges | Win32.TokenQuery, out nint token))
             return false;
@@ -43,10 +44,12 @@ public static class Privileges
         }
     }
 
+    /// <summary>Administrator on Windows, root on Linux.</summary>
     public static bool IsElevated
     {
         get
         {
+            if (!OperatingSystem.IsWindows()) return OperatingSystem.IsLinux() && Linux.LibC.geteuid() == 0;
             using var identity = WindowsIdentity.GetCurrent();
             return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         }

@@ -10,15 +10,21 @@ namespace Cheatmaster.Core.Tests;
 /// The tests need a process that is not their own: Windows freezes an entire process while a
 /// debug event is pending, so a test that attached to itself would stop the thread that has to
 /// handle the event.
+///
+/// On Linux it must not be a child of the test either. .NET waits on its own children, and a
+/// stopped child's ptrace stops would be taken by that wait instead of the watch. So it is
+/// started through setsid -f, which leaves it parented to init; its pid comes back on stdout.
 /// </summary>
 internal sealed class WatchTargetProcess : IDisposable
 {
     public const int FieldOffset = 0x18;
 
+    private readonly Process _launcher;
     private readonly Process _process;
 
-    private WatchTargetProcess(Process process, ulong block, int fieldOffset)
+    private WatchTargetProcess(Process launcher, Process process, ulong block, int fieldOffset)
     {
+        _launcher = launcher;
         _process = process;
         Block = block;
         Field = block + (ulong)fieldOffset;
@@ -34,26 +40,39 @@ internal sealed class WatchTargetProcess : IDisposable
 
     public bool HasExited => _process.HasExited;
 
-    public static WatchTargetProcess Start()
+    public static WatchTargetProcess Start(params string[] arguments)
     {
-        string exe = Path.Combine(AppContext.BaseDirectory, "Cheatmaster.WatchTarget.exe");
+        string exe = Path.Combine(AppContext.BaseDirectory,
+            OperatingSystem.IsWindows() ? "Cheatmaster.WatchTarget.exe" : "Cheatmaster.WatchTarget");
         Assert.True(File.Exists(exe), $"the stand-in game was not built next to the tests: {exe}");
 
-        var process = Process.Start(new ProcessStartInfo(exe)
+        var info = new ProcessStartInfo(OperatingSystem.IsWindows() ? exe : "setsid")
         {
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true
-        });
-        Assert.NotNull(process);
+        };
+        if (!OperatingSystem.IsWindows())
+        {
+            info.ArgumentList.Add("-f");
+            info.ArgumentList.Add(exe);
+        }
+        foreach (string argument in arguments) info.ArgumentList.Add(argument);
 
-        string? blockLine = ReadLine(process!);
-        string? offsetLine = ReadLine(process!);
-        Assert.True(blockLine is not null && offsetLine is not null, "the stand-in game did not report its address");
+        var launcher = Process.Start(info);
+        Assert.NotNull(launcher);
+
+        string? blockLine = ReadLine(launcher!);
+        string? offsetLine = ReadLine(launcher!);
+        string? pidLine = ReadLine(launcher!);
+        Assert.True(blockLine is not null && offsetLine is not null && pidLine is not null,
+            "the stand-in game did not report its address");
 
         ulong block = ulong.Parse(blockLine!, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         int offset = int.Parse(offsetLine!, CultureInfo.InvariantCulture);
-        return new WatchTargetProcess(process!, block, offset);
+        int pid = int.Parse(pidLine!, CultureInfo.InvariantCulture);
+        var process = OperatingSystem.IsWindows() ? launcher! : Process.GetProcessById(pid);
+        return new WatchTargetProcess(launcher!, process, block, offset);
     }
 
     private static string? ReadLine(Process process)
@@ -74,5 +93,6 @@ internal sealed class WatchTargetProcess : IDisposable
         }
 
         _process.Dispose();
+        if (!ReferenceEquals(_launcher, _process)) _launcher.Dispose();
     }
 }
