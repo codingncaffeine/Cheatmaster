@@ -12,8 +12,11 @@ internal interface IProcessBackend : IDisposable
     /// <summary>Bytes read from the start of <paramref name="buffer"/>; fewer than asked means the rest failed.</summary>
     int Read(ulong address, Span<byte> buffer);
 
-    /// <summary>Writes, lifting page protection if that is what it takes.</summary>
-    bool Write(ulong address, ReadOnlySpan<byte> data);
+    /// <summary>
+    /// Writes. With <paramref name="liftProtection"/> a read-only page is written anyway, the way a
+    /// debugger plants a breakpoint; without it such a write is refused.
+    /// </summary>
+    bool Write(ulong address, ReadOnlySpan<byte> data, bool liftProtection);
 
     /// <summary>Loaded modules, main executable first.</summary>
     List<ModuleEntry> LoadModules();

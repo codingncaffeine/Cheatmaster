@@ -45,7 +45,7 @@ public partial class AccessWatchWindow : Window
 
         // Detach before the search: indexing every pointer in the target is heavy, and there is
         // no reason to keep freezing the game while it runs.
-        _viewModel.Stop();
+        await _viewModel.StopAsync();
 
         var window = new PointerScanWindow(_process, _viewModel.Address, _viewModel.Description,
             _viewModel.Type, _expectedBits, guess.Offset);

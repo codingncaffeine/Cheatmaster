@@ -13,7 +13,18 @@ public partial class CloudSyncWindow : Window
         WindowChrome.DragBy(this, TitleBar);
     }
 
-    public CloudSyncWindow(AppSettings settings) : this() => DataContext = new CloudSyncViewModel(settings);
+    /// <summary>
+    /// Reading the saved sign-in can wait on the desktop keyring, which may be locked and asking for a
+    /// password, so the view model is built off the UI thread once the window is up.
+    /// </summary>
+    public CloudSyncWindow(AppSettings settings) : this()
+    {
+        Opened += async (_, _) =>
+        {
+            if (DataContext is not null) return;
+            DataContext = await Task.Run(() => new CloudSyncViewModel(settings));
+        };
+    }
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

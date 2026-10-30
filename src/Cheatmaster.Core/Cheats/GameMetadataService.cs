@@ -378,34 +378,56 @@ public sealed partial class GameMetadataService
     {
         foreach (string url in candidates)
         {
-            if (string.IsNullOrEmpty(url)) continue;
+            // Addresses come from store listings: only HTTPS, and only something that says it is a picture.
+            if (string.IsNullOrEmpty(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) continue;
             ct.ThrowIfCancellationRequested();
 
             try
             {
-                using var response = await Http.GetAsync(url, ct).ConfigureAwait(false);
+                using var response = await Http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) continue;
+                if (response.Content.Headers.ContentType?.MediaType is { } media && !media.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) continue;
+                if (response.Content.Headers.ContentLength is > MaxArtBytes) continue;
 
-                byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-                if (bytes.Length < 512) continue;
+                byte[]? bytes = await ReadCappedAsync(response, MaxArtBytes, ct).ConfigureAwait(false);
+                if (bytes is null || bytes.Length < 512) continue;
 
                 if (optimize is not null) bytes = optimize(bytes);
+                if (bytes.Length == 0) continue; // not a picture the app is willing to decode
 
                 string? directory = Path.GetDirectoryName(destination);
                 if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
-                string temporary = destination + ".tmp";
+                string temporary = destination + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
                 await File.WriteAllBytesAsync(temporary, bytes, ct).ConfigureAwait(false);
                 File.Move(temporary, destination, overwrite: true);
                 return true;
             }
-            catch (Exception ex) when (ex is HttpRequestException or IOException)
+            catch (Exception ex) when (ex is HttpRequestException or IOException ||
+                                       (ex is TaskCanceledException && !ct.IsCancellationRequested))
             {
-                // Try the next candidate.
+                // Try the next candidate; a timeout is just a slow store.
             }
         }
 
         return false;
+    }
+
+    /// <summary>A cover is tens of kilobytes; nothing a store serves as one comes near this.</summary>
+    private const int MaxArtBytes = 8 * 1024 * 1024;
+
+    private static async Task<byte[]?> ReadCappedAsync(HttpResponseMessage response, int limit, CancellationToken ct)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > limit) return null;
+            buffer.Write(chunk, 0, read);
+        }
+        return buffer.ToArray();
     }
 
     /// <summary>

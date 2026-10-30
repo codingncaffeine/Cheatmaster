@@ -1013,7 +1013,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         {
             try
             {
-                var map = PointerMap.Build(process, RegionFilter.Everything, ct: cancel.Token);
+                // Half the interactive budget: this runs unasked, beside a game that needs its memory.
+                var map = PointerMap.Build(process, RegionFilter.Everything, maxPointers: 20_000_000, ct: cancel.Token);
                 var routes = PointerScanner.Find(process, map, target,
                     new PointerScanOptions { MaxDepth = 6, MaxOffset = 0x1000, MaxResults = 50 }, ct: cancel.Token);
                 return PointerScanner.Verify(process, routes, type, expected, cancel.Token);
@@ -1812,18 +1813,27 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             new FileKind("All files", "*"));
         if (fileName is null) return;
 
-        if (".CT".Equals(System.IO.Path.GetExtension(fileName), StringComparison.OrdinalIgnoreCase))
+        // A table is kilobytes; a file this size is not one, and parsing it would only hang the app.
+        if (new FileInfo(fileName) is { Exists: true, Length: > MaxImportBytes })
         {
-            ImportCheatEngineTable(fileName);
+            Notify("That file is far too large to be a cheat table.", NoticeKind.Error);
             return;
         }
 
-        var loaded = CheatTable.Load(fileName);
+        if (".CT".Equals(System.IO.Path.GetExtension(fileName), StringComparison.OrdinalIgnoreCase))
+        {
+            var report = await Task.Run(() => CheatEngineTable.Load(fileName));
+            if (report.Failed) Notify(report.Error!, NoticeKind.Error);
+            else Adopt(report);
+            return;
+        }
+
+        var loaded = await Task.Run(() => CheatTable.Load(fileName));
         if (loaded is null)
         {
             // A Cheat Engine table saved under another name still reads fine, so it is worth a try
             // before telling someone their file is no good.
-            var fallback = CheatEngineTable.Load(fileName);
+            var fallback = await Task.Run(() => CheatEngineTable.Load(fileName));
             if (!fallback.Failed)
             {
                 Adopt(fallback);
@@ -1848,17 +1858,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     /// <summary>Shows what a Cheat Engine table could not bring across, when anything could not.</summary>
     public Action<ImportReport>? ShowImportReport { get; set; }
 
-    private void ImportCheatEngineTable(string path)
-    {
-        var report = CheatEngineTable.Load(path);
-        if (report.Failed)
-        {
-            Notify(report.Error!, NoticeKind.Error);
-            return;
-        }
-
-        Adopt(report);
-    }
+    private const long MaxImportBytes = 64L * 1024 * 1024;
 
     private void Adopt(ImportReport report)
     {

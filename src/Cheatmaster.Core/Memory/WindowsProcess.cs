@@ -154,7 +154,7 @@ internal sealed class WindowsProcess : IProcessBackend
         return 0;
     }
 
-    public unsafe bool Write(ulong address, ReadOnlySpan<byte> data)
+    public unsafe bool Write(ulong address, ReadOnlySpan<byte> data, bool liftProtection)
     {
         if (_handle == 0 || data.Length == 0) return false;
 
@@ -164,7 +164,7 @@ internal sealed class WindowsProcess : IProcessBackend
                 return true;
         }
 
-        return WriteWithProtectionLifted(address, data);
+        return liftProtection && WriteWithProtectionLifted(address, data);
     }
 
     /// <summary>

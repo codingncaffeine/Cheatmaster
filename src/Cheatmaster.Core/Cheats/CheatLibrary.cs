@@ -51,6 +51,20 @@ public sealed class CheatLibrary
         var table = File.Exists(path) ? CheatTable.Load(path) : null;
         if (table is not null) return table;
 
+        // A file that exists but cannot be read is set aside rather than overwritten by the empty
+        // table that replaces it, so a damaged save can still be recovered by hand.
+        if (File.Exists(path))
+        {
+            try
+            {
+                File.Move(path, path + "." + DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture) + ".unreadable");
+            }
+            catch (IOException)
+            {
+                // Leave it; the new table will be saved over it only if the player adds something.
+            }
+        }
+
         var fresh = CheatTable.ForGame(fingerprint);
         fresh.SourcePath = path;
         return fresh;

@@ -133,7 +133,7 @@ internal sealed class LinuxProcess : IProcessBackend
         }
     }
 
-    public unsafe bool Write(ulong address, ReadOnlySpan<byte> data)
+    public unsafe bool Write(ulong address, ReadOnlySpan<byte> data, bool liftProtection)
     {
         if (data.Length == 0) return false;
         fixed (byte* p = data)
@@ -141,6 +141,7 @@ internal sealed class LinuxProcess : IProcessBackend
             var local = new IoVec { Base = (nint)p, Length = (nuint)data.Length };
             var remote = new IoVec { Base = (nint)address, Length = (nuint)data.Length };
             if (LibC.process_vm_writev(_pid, &local, 1, &remote, 1, 0) == data.Length) return true;
+            if (!liftProtection) return false;
 
             // process_vm_writev honours page protection. Writing through /proc/<pid>/mem is the
             // kernel's own way past it — the same path a debugger uses to plant a breakpoint —

@@ -67,7 +67,10 @@ public sealed class AppSettings
         try
         {
             System.IO.Directory.CreateDirectory(Directory);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Options));
+            // Swapped in whole: a crash mid-write must not leave half a settings file behind.
+            string temporary = FilePath + "." + Environment.ProcessId + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(this, Options));
+            File.Move(temporary, FilePath, overwrite: true);
         }
         catch
         {

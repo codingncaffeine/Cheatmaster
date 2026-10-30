@@ -80,6 +80,8 @@ public static class LinuxAccess
     /// </summary>
     public static async Task<string> RelaxAsync()
     {
+        // Only system directories: whatever runs here runs as root once the password is typed, so a
+        // program of the same name earlier in the user's PATH must never be the one picked.
         string? sysctl = FindProgram("sysctl", "/usr/bin", "/usr/sbin", "/sbin", "/bin");
         string? pkexec = FindProgram("pkexec", "/usr/bin", "/bin");
         if (pkexec is null) return "pkexec is not installed, so there is no way to ask for the password. Run: sudo sysctl kernel.yama.ptrace_scope=0";
@@ -119,7 +121,7 @@ public static class LinuxAccess
 
     private static string? FindProgram(string name, params string[] fallbacks)
     {
-        foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(':', StringSplitOptions.RemoveEmptyEntries).Concat(fallbacks))
+        foreach (string dir in fallbacks)
         {
             string candidate = Path.Combine(dir, name);
             if (File.Exists(candidate)) return candidate;

@@ -15,13 +15,26 @@ public static class CoverOptimizer
     private const int MaxHeight = 450;
     private const int Quality = 80;
 
-    /// <summary>Returns the re-encoded image, or the original bytes if anything goes wrong.</summary>
+    /// <summary>Far beyond any cover; a picture claiming more is built to exhaust memory when decoded.</summary>
+    private const long MaxPixels = 40_000_000;
+
+    /// <summary>
+    /// Returns the re-encoded image, or the original bytes if re-encoding does not help. Returns an
+    /// empty array for something that is not a picture, or one too large to decode safely, so it is
+    /// never saved.
+    /// </summary>
     public static byte[] Shrink(byte[] original)
     {
         if (original.Length == 0) return original;
 
         try
         {
+            // The header says how big the picture is before a single pixel is decoded.
+            using (var codec = SKCodec.Create(new SKMemoryStream(original)))
+            {
+                if (codec is null || (long)codec.Info.Width * codec.Info.Height > MaxPixels) return [];
+            }
+
             using var decoded = SKBitmap.Decode(original);
             if (decoded is null) return original;
 

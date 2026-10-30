@@ -309,6 +309,12 @@ public sealed partial class AccessWatch
         var pending = new Queue<int>(_tracees.Keys);
         foreach (int tid in pending) LibC.ptrace(Ptrace.Interrupt, tid, 0, 0);
 
+        // A thread busy in the kernel (disk, a driver) can take longer than one wait to stop. It is
+        // asked again rather than abandoned seized; only after three tries is it left, and then the
+        // kernel releases it the moment Cheatmaster exits.
+        var attempts = new Dictionary<int, int>();
+        int abandoned = 0;
+
         while (pending.Count > 0)
         {
             int tid = pending.Dequeue();
@@ -353,12 +359,28 @@ public sealed partial class AccessWatch
                 break;
             }
 
-            if (!stopped) continue;
+            if (!stopped)
+            {
+                int tries = attempts.GetValueOrDefault(tid) + 1;
+                attempts[tid] = tries;
+                if (tries < 3 && Directory.Exists($"{ProcFs.Dir(_process.Pid)}/task/{tid}"))
+                {
+                    LibC.ptrace(Ptrace.Interrupt, tid, 0, 0);
+                    pending.Enqueue(tid);
+                }
+                else if (tries >= 3)
+                {
+                    abandoned++;
+                }
+                continue;
+            }
             ArmLinux(tid, arm: false);
             LibC.ptrace(Ptrace.Detach, tid, 0, pass);
         }
 
         _tracees.Clear();
+        if (abandoned > 0)
+            _status = $"{abandoned} game thread(s) would not stop to be released; they will be when Cheatmaster closes.";
     }
 
     private static nint PeekDebugRegister(int tid, int index)

@@ -141,7 +141,8 @@ public sealed class CheatTable
         string? directory = System.IO.Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
-        string temporary = path + ".tmp";
+        // A name of its own per save: two saves racing on one temporary file could swap in half of each.
+        string temporary = path + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(this, Options));
         File.Move(temporary, path, overwrite: true);
         SourcePath = path;

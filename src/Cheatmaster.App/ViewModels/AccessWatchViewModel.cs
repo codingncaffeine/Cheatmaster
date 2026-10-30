@@ -76,7 +76,7 @@ public sealed class AccessWatchViewModel : ObservableObject, IDisposable
         Type = type;
 
         StartCommand = new RelayCommand(async () => await StartAsync(), () => !IsWatching && !IsBusy);
-        StopCommand = new RelayCommand(Stop, () => IsWatching);
+        StopCommand = new RelayCommand(async () => await StopAsync(), () => IsWatching);
 
         _status = "Nothing is being watched yet.";
 
@@ -258,6 +258,14 @@ public sealed class AccessWatchViewModel : ObservableObject, IDisposable
 
         IsBusy = false;
 
+        // The window may have closed while the debugger was attaching. A watch nobody will ever
+        // stop would leave the game's threads seized, so it is let go at once.
+        if (_disposed)
+        {
+            watch?.Dispose();
+            return;
+        }
+
         if (watch is null)
         {
             Status = error;
@@ -326,13 +334,16 @@ public sealed class AccessWatchViewModel : ObservableObject, IDisposable
         Raise(nameof(CanTraceRoute));
     }
 
-    /// <summary>Detaches. Nothing else in the app is allowed to leave a debugger on the game.</summary>
-    public void Stop()
+    /// <summary>
+    /// Detaches. Nothing else in the app is allowed to leave a debugger on the game. Letting go of
+    /// every thread can take a moment, so it happens off the UI thread.
+    /// </summary>
+    public async Task StopAsync()
     {
         _timer.Stop();
         if (_watch is not { } watch) return;
 
-        watch.Stop();
+        await Task.Run(watch.Stop);
         HitCount = watch.HitCount;
         Merge(watch.Snapshot());
         Status = watch.Status;
@@ -347,10 +358,14 @@ public sealed class AccessWatchViewModel : ObservableObject, IDisposable
         StopCommand.RaiseCanExecuteChanged();
     }
 
+    private bool _disposed;
+
     public void Dispose()
     {
-        Stop();
-        _watch?.Dispose();
+        _disposed = true;
+        _timer.Stop();
+        // The window is closing: detach in the background, where waiting cannot freeze the app.
+        if (_watch is { } watch) _ = Task.Run(watch.Dispose);
         _watch = null;
     }
 }

@@ -16,6 +16,27 @@ public sealed class TargetProcess : IDisposable
 
     private IProcessBackend? _backend;
     private List<ModuleEntry>? _modules;
+    private long _modulesLoadedAt;
+
+    // Several threads use the backend at once (scans, the freezer, the UI). Each use is counted, and
+    // closing waits for the count to drain, so nothing writes through a handle or descriptor that
+    // has been closed — or, worse, reopened by the system for something else.
+    private int _users;
+    private volatile bool _closing;
+
+    private IProcessBackend? Enter()
+    {
+        Interlocked.Increment(ref _users);
+        var backend = _backend;
+        if (_closing || backend is null)
+        {
+            Interlocked.Decrement(ref _users);
+            return null;
+        }
+        return backend;
+    }
+
+    private void Exit() => Interlocked.Decrement(ref _users);
 
     public int Pid { get; }
     public string Name { get; }
@@ -33,9 +54,17 @@ public sealed class TargetProcess : IDisposable
         CanWrite = canWrite;
     }
 
-    public bool IsOpen => _backend is not null;
+    public bool IsOpen => _backend is not null && !_closing;
 
-    public bool IsRunning => _backend?.IsRunning ?? false;
+    public bool IsRunning
+    {
+        get
+        {
+            if (Enter() is not { } backend) return false;
+            try { return backend.IsRunning; }
+            finally { Exit(); }
+        }
+    }
 
     public static TargetProcess? Open(int pid, out string error)
     {
@@ -46,7 +75,28 @@ public sealed class TargetProcess : IDisposable
         return null;
     }
 
-    public IReadOnlyList<ModuleEntry> Modules => _modules ??= _backend?.LoadModules() ?? [];
+    /// <summary>
+    /// Loaded modules, main executable first. Re-read every few seconds: a game under Wine is
+    /// often still loading its libraries when it is first attached, and a list frozen at that
+    /// moment would never learn about them.
+    /// </summary>
+    public IReadOnlyList<ModuleEntry> Modules
+    {
+        get
+        {
+            var cached = _modules;
+            if (cached is not null && Environment.TickCount64 - Interlocked.Read(ref _modulesLoadedAt) < 5000) return cached;
+            if (Enter() is not { } backend) return cached ?? [];
+            try
+            {
+                var fresh = backend.LoadModules();
+                _modules = fresh;
+                Interlocked.Exchange(ref _modulesLoadedAt, Environment.TickCount64);
+                return fresh;
+            }
+            finally { Exit(); }
+        }
+    }
 
     public ModuleEntry? MainModule => Modules.Count > 0 ? Modules[0] : null;
 
@@ -66,10 +116,12 @@ public sealed class TargetProcess : IDisposable
     public List<MemoryRegion> EnumerateRegions(RegionFilter filter)
     {
         var result = new List<MemoryRegion>();
-        if (_backend is null) return result;
+        var modules = Modules;
+        if (Enter() is not { } backend) return result;
 
         var raw = new List<MemoryRegion>();
-        _backend.QueryRegions(filter.Start, filter.End, Modules, raw);
+        try { backend.QueryRegions(filter.Start, filter.End, modules, raw); }
+        finally { Exit(); }
 
         foreach (var region in raw)
         {
@@ -90,8 +142,12 @@ public sealed class TargetProcess : IDisposable
         return result;
     }
 
-    public int Read(ulong address, Span<byte> buffer) =>
-        _backend is null || buffer.Length == 0 ? 0 : _backend.Read(address, buffer);
+    public int Read(ulong address, Span<byte> buffer)
+    {
+        if (buffer.Length == 0 || Enter() is not { } backend) return 0;
+        try { return backend.Read(address, buffer); }
+        finally { Exit(); }
+    }
 
     public bool ReadExact(ulong address, Span<byte> buffer) => Read(address, buffer) == buffer.Length;
 
@@ -149,8 +205,20 @@ public sealed class TargetProcess : IDisposable
         return total;
     }
 
-    public bool Write(ulong address, ReadOnlySpan<byte> data) =>
-        _backend is not null && data.Length > 0 && _backend.Write(address, data);
+    /// <summary>A deliberate write by the player: read-only pages are lifted if need be.</summary>
+    public bool Write(ulong address, ReadOnlySpan<byte> data) => Write(address, data, liftProtection: true);
+
+    /// <summary>
+    /// Writes, lifting page protection only when asked. Anything repeated unattended — freezing —
+    /// asks not to: a stale route that lands in code or read-only data must fail, not patch it
+    /// forty times a second.
+    /// </summary>
+    public bool Write(ulong address, ReadOnlySpan<byte> data, bool liftProtection)
+    {
+        if (data.Length == 0 || Enter() is not { } backend) return false;
+        try { return backend.Write(address, data, liftProtection); }
+        finally { Exit(); }
+    }
 
     public unsafe bool WriteValue<T>(ulong address, T value) where T : unmanaged
     {
@@ -178,6 +246,11 @@ public sealed class TargetProcess : IDisposable
 
     public void Dispose()
     {
+        _closing = true;
+        var spin = new SpinWait();
+        var deadline = Environment.TickCount64 + 3000;
+        while (Volatile.Read(ref _users) > 0 && Environment.TickCount64 < deadline) spin.SpinOnce();
+
         _backend?.Dispose();
         _backend = null;
     }

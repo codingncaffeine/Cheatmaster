@@ -79,9 +79,25 @@ public static class CheatEngineTable
         using var archive = new ZipArchive(file, ZipArchiveMode.Read);
         var entry = archive.Entries.FirstOrDefault()
                     ?? throw new InvalidDataException("the archive is empty");
+
+        // The size an archive declares can lie, so the cap is enforced on what actually comes out:
+        // a few kilobytes that inflate to gigabytes must stop at the limit, not at out-of-memory.
+        if (entry.Length > MaxTableBytes) throw new InvalidDataException("the table inside is far too large");
         using var stream = entry.Open();
-        return new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true).ReadToEnd();
+        using var limited = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = stream.Read(chunk, 0, chunk.Length)) > 0)
+        {
+            if (limited.Length + read > MaxTableBytes) throw new InvalidDataException("the table inside is far too large");
+            limited.Write(chunk, 0, read);
+        }
+        limited.Position = 0;
+        return new StreamReader(limited, Encoding.UTF8, detectEncodingFromByteOrderMarks: true).ReadToEnd();
     }
+
+    /// <summary>The largest real tables are a few megabytes of XML.</summary>
+    private const long MaxTableBytes = 64L * 1024 * 1024;
 
     public static ImportReport Parse(string xml)
     {

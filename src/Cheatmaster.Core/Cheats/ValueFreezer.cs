@@ -104,7 +104,7 @@ public sealed class ValueFreezer : IDisposable
             // Uses the type captured with the value: reading it live could disagree with the
             // width below and leave stale bytes from the previous entry in the buffer.
             Raw.WriteBytes(pin.Type, pin.Bits, buffer);
-            if (process.Write(address, buffer[..pin.Width])) written++;
+            if (process.Write(address, buffer[..pin.Width], liftProtection: false)) written++;
         }
 
         if (written > 0) Interlocked.Add(ref _writes, written);

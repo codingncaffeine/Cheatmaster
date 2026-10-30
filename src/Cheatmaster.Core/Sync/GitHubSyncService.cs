@@ -175,6 +175,9 @@ public sealed class GitHubSyncService
 
     private readonly record struct RemoteFile(string Hash, DateTimeOffset Modified, long Size);
 
+    /// <summary>Nothing in a backup is anywhere near this; anything bigger is not ours.</summary>
+    private const long MaxDownload = 32L * 1024 * 1024;
+
     /// <summary>
     /// Content hash of a local file. Uploading is decided on content, never on timestamps
     /// alone: git stores every version it is handed and never lets one go, so re-uploading
@@ -255,7 +258,13 @@ public sealed class GitHubSyncService
             if (bytes is null) continue;
 
             Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-            await File.WriteAllBytesAsync(localPath, bytes, ct).ConfigureAwait(false);
+
+            // Written beside the real file and swapped in whole, so a reader never sees half a table.
+            // The copy it replaces is kept once, since "newer" is judged by two machines' clocks.
+            string temporary = localPath + "." + Guid.NewGuid().ToString("N")[..8] + ".part";
+            await File.WriteAllBytesAsync(temporary, bytes, ct).ConfigureAwait(false);
+            if (File.Exists(localPath)) File.Copy(localPath, localPath + ".bak", overwrite: true);
+            File.Move(temporary, localPath, overwrite: true);
 
             // Stamp the recorded time onto the file, or the next sync sees a file that is
             // newer than the backup it just came from and uploads it straight back.
@@ -318,13 +327,28 @@ public sealed class GitHubSyncService
         return files;
     }
 
-    private static string LocalPathFor(string remotePath)
+    /// <summary>
+    /// Where a backed-up file belongs on this machine, or empty. The names come from the backup's
+    /// index, which anyone holding the token can edit, so only a plain file name directly inside
+    /// the library or art folder is accepted: no folders, no "..", nothing rooted.
+    /// </summary>
+    internal static string LocalPathFor(string remotePath)
     {
+        string root, name;
         if (remotePath.StartsWith("tables/", StringComparison.Ordinal))
-            return Path.Combine(CheatLibrary.DefaultRoot, remotePath["tables/".Length..]);
-        if (remotePath.StartsWith("art/", StringComparison.Ordinal))
-            return Path.Combine(GameMetadataService.DefaultArtDirectory, remotePath["art/".Length..]);
-        return string.Empty;
+            (root, name) = (CheatLibrary.DefaultRoot, remotePath["tables/".Length..]);
+        else if (remotePath.StartsWith("art/", StringComparison.Ordinal))
+            (root, name) = (GameMetadataService.DefaultArtDirectory, remotePath["art/".Length..]);
+        else
+            return string.Empty;
+
+        if (name.Length == 0 || name.Length > 200 || name is "." or ".." ||
+            name.IndexOfAny(['/', '\\', ':', '\0']) >= 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            return string.Empty;
+
+        string full = Path.GetFullPath(Path.Combine(root, name));
+        string folder = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return full.StartsWith(folder, StringComparison.Ordinal) ? full : string.Empty;
     }
 
     private async Task EnsureRepositoryAsync(CancellationToken ct)
@@ -448,13 +472,24 @@ public sealed class GitHubSyncService
         using var request = Authorized(HttpMethod.Get,
             $"https://api.github.com/repos/{Username}/{RepositoryName}/contents/{Uri.EscapeDataString(remotePath).Replace("%2F", "/", StringComparison.Ordinal)}");
 
-        using var response = await Http.SendAsync(request, ct).ConfigureAwait(false);
+        // The raw form: the JSON form leaves the content empty for anything over 1 MB, which would
+        // otherwise be written over the local file as an empty one.
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.ParseAdd("application/vnd.github.raw");
+
+        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return null;
+        if (response.Content.Headers.ContentLength is > MaxDownload) return null;
 
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
-        if (!json.RootElement.TryGetProperty("content", out var content)) return null;
-
-        // The API wraps base64 at 60 columns; Convert ignores the whitespace.
-        return Convert.FromBase64String(content.GetString() ?? string.Empty);
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > MaxDownload) return null;
+            buffer.Write(chunk, 0, read);
+        }
+        return buffer.ToArray();
     }
 }
