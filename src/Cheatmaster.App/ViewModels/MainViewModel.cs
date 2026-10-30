@@ -1041,15 +1041,28 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Raw.WriteBytes(winner.Interpretation.Type, originals[real], buffer);
         process.Write(winner.Address, buffer.AsSpan(0, winner.Interpretation.Width));
 
-        int before = Cheats.Count;
         AddResult(winner);
+
+        // The copies are now known to be copies: any of them already in the table would only
+        // fill the library with lines that do nothing when changed.
+        var copyAddresses = new HashSet<ulong>();
+        for (int i = 0; i < rows.Count; i++) if (i != real) copyAddresses.Add(rows[i].Address);
+        var doomed = Cheats.Where(c => c.Entry.Address.Pointers.Length == 0 && copyAddresses.Contains(c.Entry.Address.Resolve(process))).ToList();
+        foreach (var row in doomed)
+        {
+            Cheats.Remove(row);
+            _table.Entries.Remove(row.Entry);
+        }
+        if (doomed.Count > 0) CheatsChanged();
+
         Verdict = $"Found it: {winner.AddressText}.";
-        VerdictDetail = rows.Count == 2
-            ? "The other address is a copy the game shows on screen. This one is in your cheat table: set it or tick Freeze."
-            : $"The other {rows.Count - 1} are copies the game shows on screen. This one is in your cheat table: set it or tick Freeze.";
-        Notify(Cheats.Count > before
-            ? $"{winner.AddressText} is the real value — added to your cheat table."
-            : $"{winner.AddressText} is the real value — it is already in your cheat table.", NoticeKind.Success);
+        VerdictDetail = (rows.Count == 2
+                ? "The other address was a copy the game shows on screen."
+                : $"The other {rows.Count - 1} were copies the game shows on screen.")
+            + " This one is in your cheat table: set it or tick Freeze. To keep it working after the game restarts, right-click it and choose Find a stable address.";
+        Notify($"{winner.AddressText} is the real value — it is in your cheat table" +
+               (doomed.Count > 0 ? $", and {doomed.Count} cop{(doomed.Count == 1 ? "y was" : "ies were")} taken out of it." : "."),
+            NoticeKind.Success);
     }
 
     /// <summary>True once the list is short enough that the top row is worth trying straight away.</summary>
@@ -1308,9 +1321,20 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         string group = name?.Trim() ?? string.Empty;
         if (rows.Count > 1 && group.Length == 0) group = SuggestGroupName();
 
+        // An address already in the table under the same type is the same cheat: adding it again
+        // only puts a second line in the library that does exactly the same thing.
+        var present = new HashSet<(ulong, ScanType)>();
+        foreach (var cheat in Cheats) present.Add((cheat.Entry.Address.Resolve(Process), cheat.Entry.Type));
+        int duplicates = 0;
+
         foreach (var row in rows)
         {
             if (added >= Limit) break;
+            if (!present.Add((row.Address, row.Interpretation.Type)))
+            {
+                duplicates++;
+                continue;
+            }
 
             var entry = new CheatEntry
             {
@@ -1327,7 +1351,12 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             added++;
         }
 
-        if (added == 0) return;
+        if (added == 0)
+        {
+            if (duplicates > 0)
+                Notify(duplicates == 1 ? "That address is already in your cheat table." : "Those addresses are already in your cheat table.", NoticeKind.Info);
+            return;
+        }
         CheatsChanged();
 
         string message = added == 1

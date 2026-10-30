@@ -231,11 +231,22 @@ public class UserPathTests
         Assert.True(vm.Results!.TotalCount is >= 4 and <= 8, $"expected the value and its copies, got {vm.Results.TotalCount} addresses");
         Assert.True(vm.CanFindReal, "Find the real one was not offered: " + vm.Verdict);
 
+        // What a player does first: keep every candidate, and one of them twice.
+        var candidates = new List<ResultRow>();
+        for (int i = 0; i < vm.Results.TotalCount; i++) candidates.Add(vm.Results[i]);
+        vm.AddResults(candidates, "gold");
+        int kept = vm.Cheats.Count;
+        vm.AddResult(candidates[0]);
+        Assert.Equal(kept, vm.Cheats.Count);
+
         Click(window, Button(window, "Find the real one"));
         WaitFor(() => vm.Verdict.StartsWith("Found it", StringComparison.Ordinal) ? vm : null,
             "the real one was not found: " + vm.Verdict + " / " + vm.Notice, seconds: 20);
 
-        Assert.Equal(target.Field, vm.Cheats[^1].Entry.Address.Resolve(vm.Process!));
+        // Only the real one is left of the candidates; the copies were taken out of the table.
+        var left = vm.Cheats.Select(c => c.Entry.Address.Resolve(vm.Process!))
+            .Where(a => candidates.Any(r => r.Address == a)).ToList();
+        Assert.Equal([target.Field], left);
         // Put back as it was, and the copies follow it again.
         WaitFor(() => outside.ReadValue<int>(target.Field + 8) == 987654321 ? vm : null, "the copies did not settle back");
         Assert.Equal(987654321, outside.ReadValue<int>(target.Field));
