@@ -113,6 +113,18 @@ public class UserPathTests
         }
         Assert.True(hit is not null, $"the held value's address was not among {results.Count} results");
 
+        // One row per address, and once few are left the app names the likely one outright.
+        int rowsForField = 0;
+        for (int i = 0; i < results.Count; i++) if (results[i].Address == target.Field) rowsForField++;
+        Assert.Equal(1, rowsForField);
+        Assert.True(results.IsByAddress, "the list still shows one row per encoding");
+        if (results.TotalCount <= 8)
+        {
+            Assert.True(vm.HasLikely, "no most-likely address was offered: " + vm.Verdict);
+            Assert.Contains("left", vm.Verdict);
+            Assert.True(Button(window, "Add and test it").IsEffectivelyVisible);
+        }
+
         // Keep it: select the row, then Enter.
         var grid = window.FindControl<ListBox>("ResultsGrid")!;
         grid.ScrollIntoView(hit);

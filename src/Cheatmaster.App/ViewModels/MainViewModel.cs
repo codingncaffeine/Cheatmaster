@@ -66,6 +66,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         SetValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: false));
         FreezeAtValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: true));
         GroupSelectedCommand = new RelayCommand(GroupSelected);
+        AddAndTestCommand = new RelayCommand(AddAndTest);
         RecheckRoutesCommand = new RelayCommand(RecheckRoutes, () => IsAttached && !IsScanning);
         ShowScannerCommand = new RelayCommand(() => IsLibraryView = false);
         ShowLibraryCommand = new RelayCommand(() => IsLibraryView = true);
@@ -469,9 +470,15 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         {
             if (Results is null) return "No scan yet";
             string total = Results.TotalCount.ToString("N0", CultureInfo.InvariantCulture);
-            return Results.IsCapped
-                ? $"{total} results (showing first {Results.Count:N0})"
-                : $"{total} result" + (Results.TotalCount == 1 ? "" : "s");
+            string noun = Results.IsByAddress
+                ? (Results.TotalCount == 1 ? "address" : "addresses")
+                : (Results.TotalCount == 1 ? "result" : "results");
+            string text = Results.IsCapped
+                ? $"{total} {noun} (showing first {Results.Count:N0})"
+                : $"{total} {noun}";
+            if (Results.HiddenCount > 0)
+                text += $" · {Results.HiddenCount:N0} unlikely matches hidden";
+            return text;
         }
     }
 
@@ -533,6 +540,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
     /// <summary>Follows every saved route again, which is the only thing that proves one.</summary>
     public RelayCommand RecheckRoutesCommand { get; }
+
+    public RelayCommand AddAndTestCommand { get; }
 
     private bool CanScan => IsAttached && !IsScanning &&
         (!NeedsValue || UserValue.Parse(ValueText).IsValid) &&
@@ -856,8 +865,11 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Chips.Clear();
 
         var best = results.BestGuess;
+        bool anyUsable = results.Groups.Any(g => !g.Capped && g.Count > 0);
         foreach (var group in results.RankedGroups)
         {
+            // Encodings too common to tell anything apart are only worth showing when nothing else is left.
+            if (anyUsable && group.Capped) continue;
             var chip = new InterpretationChip(group, best is not null && group.InterpId == best.InterpId)
             {
                 IsPinned = pinned.Contains(group.InterpId)
@@ -866,38 +878,93 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         }
     }
 
+    /// <summary>Few enough addresses left that trying them one by one is quicker than scanning again.</summary>
+    private const int FewEnoughToTry = 8;
+
+    /// <summary>
+    /// Tells the player what to do next, in their terms: how many places are left, and whether to
+    /// scan again or start trying them. Storage encodings are the app's business, not theirs.
+    /// </summary>
     private void BuildVerdict(ScanResults results)
     {
+        Raise(nameof(HasLikely));
+        Raise(nameof(LikelyText));
+
         if (results.Count == 0)
         {
             Verdict = "Nothing matched.";
-            VerdictDetail = SelectedProfile.Profile == ScanProfile.Thorough
-                ? "Try changing the value in the game and scanning for the new number, or turn off 'Writable memory only' in scan options."
-                : "Try the Thorough profile, set Rounding to Loose, or turn off 'Writable memory only' in scan options.";
+            VerdictDetail = HasScanHistory
+                ? "The number did not follow your scans. Undo, check the number in the game, and scan again — or start a new search with Increased / Decreased if the game rounds it."
+                : SelectedProfile.Profile == ScanProfile.Thorough
+                    ? "Try changing the value in the game and scanning for the new number, or turn off 'Writable memory only' in scan options."
+                    : "Try the Thorough profile, set Rounding to Loose, or turn off 'Writable memory only' in scan options.";
             return;
         }
 
-        var usable = results.Groups.Where(g => !g.Capped).ToList();
-        var best = results.BestGuess;
-
-        if (usable.Count == 1 && best is not null)
+        int left = Results?.TotalCount ?? results.Count;
+        if (Results is { IsByAddress: false })
         {
-            Verdict = $"Stored as {best.Label}.";
-            VerdictDetail = best.Count == 1
-                ? "One address left — add it to the cheat table."
-                : $"{best.Count:N0} addresses match. Change the value in the game, then scan again to narrow it down.";
+            Verdict = "That number is everywhere.";
+            VerdictDetail = "A small number appears millions of times in a game's memory. Change it in the game — spend some, pick some up — then type the new number and press Next scan. Each scan rules out the places that did not change with it.";
             return;
         }
 
-        if (best is null)
+        if (left == 1)
         {
-            Verdict = "Too many matches to tell.";
-            VerdictDetail = "Every encoding matched more addresses than is useful. Search a more unusual number, or change the value and scan again.";
+            Verdict = "Found it — one address left.";
+            VerdictDetail = "Press Add and test it: it goes into your cheat table and asks for a new value. If the number in the game changes, that is it — tick Freeze to hold it.";
             return;
         }
 
-        Verdict = $"Best match: {best.Label} ({best.Count:N0}).";
-        VerdictDetail = $"{usable.Count - 1} other encoding(s) still possible. Change the value in the game and scan again — the wrong ones will drop out.";
+        if (left <= FewEnoughToTry)
+        {
+            Verdict = $"Nearly there — {left} addresses left.";
+            VerdictDetail = "Some of these are copies the game only shows on screen. Press Add and test it for the most likely one; if the game's number does not change, double-click the next one in the list and use Set value on it.";
+            return;
+        }
+
+        Verdict = $"{left:N0} addresses left.";
+        VerdictDetail = "Change the number in the game, type the new value and press Next scan. Each scan rules out the places that did not change with it — usually a few scans are enough.";
+    }
+
+    private bool HasScanHistory => Session?.CanUndo == true;
+
+    /// <summary>True once the list is short enough that the top row is worth trying straight away.</summary>
+    public bool HasLikely => Results is { IsByAddress: true, TotalCount: > 0 } r && r.TotalCount <= FewEnoughToTry;
+
+    public string LikelyText => HasLikely && Results is { } r
+        ? $"Most likely: {r[0].AddressText}, holding {r[0].ValueText}"
+        : string.Empty;
+
+    /// <summary>
+    /// Adds the most likely address and asks for a value to write, which is the one test that
+    /// settles it: a display copy changes nothing, the real value changes the game.
+    /// </summary>
+    private async void AddAndTest()
+    {
+        if (Results is not { TotalCount: > 0 } results || Process is null) return;
+
+        var row = results[0];
+        int before = Cheats.Count;
+        AddResult(row);
+        var added = Cheats.Count > before ? Cheats[^1] : Cheats.FirstOrDefault(c => c.Entry.Address.Resolve(Process) == row.Address);
+        if (added is null || PromptForValue is not { } prompt) return;
+
+        string? input = await prompt("Test this address",
+            $"Write a new value to {row.AddressText}, then look at the game. If its number changes, this is the one.",
+            row.ValueText);
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        if (added.TrySetValue(input.Trim()))
+        {
+            // Setting a value should also be what is held if the player freezes it next.
+            added.FreezeValue = input.Trim();
+            Notify($"Wrote {input.Trim()} to {row.AddressText}. Did the number in the game change? If so, tick Freeze on it in the cheat table. If not, try the next address in the list.", NoticeKind.Success);
+        }
+        else
+        {
+            Notify($"{row.AddressText} would not take that value. Check the number, or try the next address.", NoticeKind.Warning);
+        }
     }
 
     private void PinInterpretation(InterpretationChip? chip)
