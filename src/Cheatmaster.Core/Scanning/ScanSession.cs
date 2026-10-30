@@ -343,10 +343,22 @@ public sealed partial class ScanSession
             }
         });
 
+        // A theory that hit its cap last time kept only some of its matches, so narrowing that list
+        // can lose the very address being looked for. When the new comparison names a value, those
+        // theories are searched for afresh across the whole of memory instead.
+        var rescan = RescanCappedTheories(request, previous, allowed, progress, ct);
+
         sw.Stop();
 
         int total = 0;
-        foreach (var part in partitions) total += part?.Count ?? 0;
+        foreach (var part in partitions)
+        {
+            if (part is null) continue;
+            for (int i = 0; i < part.Count; i++)
+                if (rescan is null || !rescan.Theories.Contains(part.Interpretations[i])) total++;
+        }
+        if (rescan is not null)
+            foreach (var b in rescan.Outcome.Buffers) total += b?.Count ?? 0;
 
         var addresses = new ulong[total];
         var ids = new int[total];
@@ -355,10 +367,25 @@ public sealed partial class ScanSession
         foreach (var part in partitions)
         {
             if (part is null || part.Count == 0) continue;
-            Array.Copy(part.Addresses, 0, addresses, pos, part.Count);
-            Array.Copy(part.Interpretations, 0, ids, pos, part.Count);
-            Array.Copy(part.Values, 0, values, pos, part.Count);
-            pos += part.Count;
+            for (int i = 0; i < part.Count; i++)
+            {
+                if (rescan is not null && rescan.Theories.Contains(part.Interpretations[i])) continue;
+                addresses[pos] = part.Addresses[i];
+                ids[pos] = part.Interpretations[i];
+                values[pos] = part.Values[i];
+                pos++;
+            }
+        }
+        if (rescan is not null)
+        {
+            foreach (var b in rescan.Outcome.Buffers)
+            {
+                if (b is null || b.Count == 0) continue;
+                Array.Copy(b.Addresses, 0, addresses, pos, b.Count);
+                Array.Copy(b.Interpretations, 0, ids, pos, b.Count);
+                Array.Copy(b.Values, 0, values, pos, b.Count);
+                pos += b.Count;
+            }
         }
 
         var counts = new int[interpretations.Length];
@@ -367,7 +394,9 @@ public sealed partial class ScanSession
         for (int i = 0; i < interpretations.Length; i++)
         {
             if (counts[i] == 0) continue;
-            groups.Add(new InterpretationGroup(i, interpretations[i], counts[i], false));
+            bool capped = rescan is not null && rescan.Theories.Contains(i)
+                          && rescan.Outcome.InterpCounts[i] >= Settings.MaxResultsPerInterpretation;
+            groups.Add(new InterpretationGroup(i, interpretations[i], counts[i], capped));
         }
 
         var results = new ScanResults
@@ -385,6 +414,42 @@ public sealed partial class ScanSession
 
         Commit(results);
         return results;
+    }
+
+    private sealed record CappedRescan(HashSet<int> Theories, ChunkRunOutcome Outcome);
+
+    /// <summary>
+    /// Searches the whole of memory again for every theory the previous scan capped, when the
+    /// comparison names a value to look for. Comparisons against the previous value (changed,
+    /// increased, ...) have nothing to search for on their own and narrow the kept list as before.
+    /// </summary>
+    private CappedRescan? RescanCappedTheories(ScanRequest request, ScanResults previous, HashSet<int>? allowed,
+        IProgress<ScanProgress>? progress, CancellationToken ct)
+    {
+        if (!request.Compare.IsRangeComparison() || request.Compare == CompareKind.NotEqualTo) return null;
+
+        var capped = new HashSet<int>();
+        foreach (var group in previous.Groups)
+        {
+            if (group.Capped && (allowed is null || allowed.Contains(group.InterpId))) capped.Add(group.InterpId);
+        }
+        if (capped.Count == 0) return null;
+
+        var full = ScanPlan.Build(previous.Interpretations, request.Compare, request.Value, request.Value2, request.Rounding, deduplicate: false);
+        var plan = new ScanPlan
+        {
+            Interpretations = full.Interpretations,
+            Items = [.. full.Items.Where(item => capped.Contains(item.InterpId))],
+            RejectedInterpretations = full.RejectedInterpretations
+        };
+        if (plan.Items.Length == 0) return new CappedRescan(capped, new ChunkRunOutcome([], new long[previous.Interpretations.Length], false));
+
+        var regions = Process.EnumerateRegions(Settings.Regions.ToFilter());
+        var chunks = BuildChunks(regions, Settings.ChunkSize, plan.MaxWidth - 1);
+        long totalBytes = 0;
+        foreach (var c in chunks) totalBytes += c.CoreLength;
+
+        return new CappedRescan(capped, RunChunks(plan, chunks, totalBytes, progress, ct));
     }
 
     private static bool Keep(ScanRequest request, in Interpretation interp, int interpId, ulong current, ulong before,
