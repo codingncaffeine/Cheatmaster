@@ -1059,13 +1059,39 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     /// With <paramref name="automatic"/> (on attach) it never asks: if it cannot finish alone, the
     /// Find it again button is still there.
     /// </summary>
-    public async void FindAgain(CheatRow row) => await FindAgainAsync(row, automatic: false);
+    public async void FindAgain(CheatRow row) => await FindAgainAsync(PrimaryOf(row), automatic: false);
+
+    /// <summary>
+    /// The line of a named cheat that carries what the player set up — a freeze, then a hotkey — so
+    /// that is the one moved to the found address, and the bare leftovers are the ones cleared.
+    /// </summary>
+    private CheatRow PrimaryOf(CheatRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.Group)) return row;
+        return Cheats.Where(c => c.Group == row.Group && c.NeedsFinding)
+                   .OrderByDescending(static c => c.Frozen)
+                   .ThenByDescending(static c => !string.IsNullOrWhiteSpace(c.Hotkey) && c.Hotkey != "—")
+                   .FirstOrDefault() ?? row;
+    }
 
     /// <summary>
     /// On attach: every saved cheat whose address moved is looked for by the value it last had, one
     /// cheat at a time (one line per name, each unnamed line on its own), without asking anything.
     /// </summary>
     private async Task FindAllAgainAsync()
+    {
+        try
+        {
+            await FindAllAgainCoreAsync();
+        }
+        catch (Exception ex)
+        {
+            // Started without anyone waiting on it: a failure must still be seen.
+            Notify("Finding saved cheats again stopped: " + ex.Message, NoticeKind.Warning);
+        }
+    }
+
+    private async Task FindAllAgainCoreAsync()
     {
         var process = Process;
         var tried = new HashSet<string>();
@@ -1076,7 +1102,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
                                                   !tried.Contains(KeyOf(c)));
             if (next is null) return;
             tried.Add(KeyOf(next));
-            await FindAgainAsync(next, automatic: true);
+            await FindAgainAsync(PrimaryOf(next), automatic: true);
         }
 
         static string KeyOf(CheatRow c) => string.IsNullOrWhiteSpace(c.Group) ? "#" + c.Entry.Id : "@" + c.Group;
@@ -1285,6 +1311,16 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         process.Write(winner.Address, buffer.AsSpan(0, winner.Interpretation.Width));
 
         var kept = relocate is not null ? Relocate(relocate, winner) : KeepResult(winner);
+
+        // The test's own nudged numbers must not stick: the kept entry remembers the value from
+        // before the test, and a new entry would otherwise be frozen at the nudge.
+        if (kept is not null)
+        {
+            string original = winner.Interpretation.FormatDisplay(originals[real]);
+            kept.Entry.LastSeen = original;
+            if (relocate is null) kept.FreezeValue = original;
+            kept.Refresh(process);
+        }
 
         // The copies are now known to be copies: any of them already in the table would only
         // fill the library with lines that do nothing when changed.

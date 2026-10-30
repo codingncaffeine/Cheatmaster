@@ -250,6 +250,9 @@ public class UserPathTests
         var left = vm.Cheats.Select(c => c.Entry.Address.Resolve(vm.Process!))
             .Where(a => candidates.Any(r => r.Address == a)).ToList();
         Assert.Equal([target.Field], left);
+        // The test's nudged numbers never stick to what is kept.
+        var keptRow = vm.Cheats.Single(c => c.Entry.Address.Resolve(vm.Process!) == target.Field);
+        Assert.Equal("987654321", keptRow.Entry.LastSeen);
         // Put back as it was, and the copies follow it again.
         WaitFor(() => outside.ReadValue<int>(target.Field + 8) == 987654321 ? vm : null, "the copies did not settle back");
         Assert.Equal(987654321, outside.ReadValue<int>(target.Field));
@@ -301,6 +304,14 @@ public class UserPathTests
             window.Close();
             Settle();
         }
+
+        // The bare line saved ahead of the real one, so simply taking the first line would keep the
+        // wrong one and throw away the freeze.
+        string saved = Directory.EnumerateFiles(Cheatmaster.Core.Cheats.CheatLibrary.DefaultRoot, "*.cmt").Single();
+        var table = Cheatmaster.Core.Cheats.CheatTable.Load(saved)!;
+        table.Entries.Reverse();
+        Assert.False(table.Entries[0].Frozen);
+        table.Save(saved);
 
         // The game starts again: the value is somewhere new.
         using var restarted = WatchTargetProcess.Start("mirror", Value);
