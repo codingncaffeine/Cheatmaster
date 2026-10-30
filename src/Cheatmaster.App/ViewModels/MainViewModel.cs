@@ -632,6 +632,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Raise(nameof(IsAttached));
         RaiseCommands();
 
+        // Saved cheats whose address moved are looked for straight away, by the value they last had.
+        _ = FindAllAgainAsync();
+
         Status = $"Attached to {opened.Name}.";
         if (!opened.CanWrite)
             Notify(OperatingSystem.IsWindows()
@@ -651,6 +654,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     {
         // A scan still reading this process must stop before the handle closes under it.
         _scanCancellation?.Cancel();
+        // The last values read are what Find it again searches for next time, so they are saved.
+        if (Cheats.Count > 0) RequestSave();
         FlushPendingSave();
         _freezer.Attach(null);
         _freezer.Update([]);
@@ -979,6 +984,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         if (Process is not { } process) return null;
         row.Entry.Address = AddressSpec.ForAddress(process, found.Address);
         row.Entry.SetInterpretation(found.Interpretation);
+        row.Entry.LastSeen = found.ValueText;
         row.NeedsFinding = false;
         row.RaiseAddressChanged();
         row.Refresh(process);
@@ -1045,53 +1051,123 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     }
 
     /// <summary>
-    /// Brings back a cheat saved as a plain address: the player types the number the game shows,
-    /// and the search, narrowing and copy test run for them. The entry is updated in place, so its
-    /// name, hotkey and freeze come with it.
+    /// Brings back a cheat saved as a plain address. It searches for the value the cheat last had,
+    /// so usually nothing is asked at all; only when the value has changed since, or too many
+    /// places hold it, does it ask the player for a number. The copy test then picks the real one,
+    /// and the entry is updated in place with its name, hotkey and freeze. Every other stale entry
+    /// filed under the same cheat goes, since the cheat has been found.
+    /// With <paramref name="automatic"/> (on attach) it never asks: if it cannot finish alone, the
+    /// Find it again button is still there.
     /// </summary>
-    public async void FindAgain(CheatRow row)
-    {
-        if (Process is null || PromptForValue is not { } prompt) return;
-        string name = string.IsNullOrWhiteSpace(row.Group) ? row.Description : row.Group;
+    public async void FindAgain(CheatRow row) => await FindAgainAsync(row, automatic: false);
 
-        string? value = await prompt($"Find {name} again",
-            $"Type the number the game shows for {name} right now.", string.Empty);
-        if (string.IsNullOrWhiteSpace(value)) return;
+    /// <summary>
+    /// On attach: every saved cheat whose address moved is looked for by the value it last had, one
+    /// cheat at a time (one line per name, each unnamed line on its own), without asking anything.
+    /// </summary>
+    private async Task FindAllAgainAsync()
+    {
+        var process = Process;
+        var tried = new HashSet<string>();
+        for (int attempt = 0; attempt < 8 && ReferenceEquals(Process, process); attempt++)
+        {
+            var next = Cheats.FirstOrDefault(c => c.NeedsFinding &&
+                                                  (c.Entry.LastSeen.Length > 0 || c.Entry.FreezeValue.Length > 0) &&
+                                                  !tried.Contains(KeyOf(c)));
+            if (next is null) return;
+            tried.Add(KeyOf(next));
+            await FindAgainAsync(next, automatic: true);
+        }
+
+        static string KeyOf(CheatRow c) => string.IsNullOrWhiteSpace(c.Group) ? "#" + c.Entry.Id : "@" + c.Group;
+    }
+
+    private async Task<bool> FindAgainAsync(CheatRow row, bool automatic)
+    {
+        if (Process is null || IsScanning || IsFindingReal) return false;
+        string name = string.IsNullOrWhiteSpace(row.Group) ? row.Description : row.Group;
+        var prompt = PromptForValue;
 
         IsLibraryView = false;
-        NewScan();
         SelectedTypeOption = TypeOptions.FirstOrDefault(t => t.Type == row.Entry.Type && row.Entry.Interpretation.IsPlain)
                              ?? TypeOptions[0];
-        ValueText = value.Trim();
-        await RunScanAsync(first: true);
+
+        // What it was last time first: a game loaded from a save usually shows just that.
+        bool found = false;
+        foreach (string guess in new[] { row.Entry.LastSeen, row.Entry.FreezeValue }.Where(static v => v.Length > 0).Distinct())
+        {
+            NewScan();
+            ValueText = guess;
+            await RunScanAsync(first: true);
+            if (Results is { TotalCount: > 0 }) { found = true; break; }
+        }
+
+        if (!found)
+        {
+            if (automatic || prompt is null)
+            {
+                NewScan();
+                return false;
+            }
+            string? value = await prompt($"Find {name} again",
+                $"{name} has changed since last time. Type the number the game shows for it now.", string.Empty);
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            NewScan();
+            ValueText = value.Trim();
+            await RunScanAsync(first: true);
+        }
 
         for (int round = 0; round < 6 && Results is { TotalCount: > FewEnoughToTry }; round++)
         {
+            if (automatic || prompt is null)
+            {
+                Notify($"{name} could not be found again by itself: {Results.TotalCount:N0} places hold that number. Press Find it again on it.", NoticeKind.Info);
+                return false;
+            }
             string? next = await prompt($"Find {name} again",
                 $"{Results.TotalCount:N0} places hold that number. Change {name} in the game — spend some or pick some up — then type the new number.",
                 string.Empty);
-            if (string.IsNullOrWhiteSpace(next)) return;
+            if (string.IsNullOrWhiteSpace(next)) return false;
             ValueText = next.Trim();
             await RunScanAsync(first: false);
         }
 
         if (Results is not { TotalCount: > 0 } results)
         {
-            Notify($"{name} was not found with that number. Check the number in the game and try Find it again.", NoticeKind.Warning);
-            return;
+            if (!automatic) Notify($"{name} was not found with that number. Check the number in the game and try Find it again.", NoticeKind.Warning);
+            return false;
         }
 
+        bool done;
         if (results.TotalCount == 1)
         {
-            if (Relocate(row, results[0]) is { } found)
-            {
-                Notify($"Found {name} again.", NoticeKind.Success);
-                SeekStableRoute(found);
-            }
-            return;
+            done = Relocate(row, results[0]) is not null;
+            if (done) SeekStableRoute(row);
+        }
+        else
+        {
+            if (automatic)
+                Notify($"Finding {name} again: open the game screen that shows it — inventory, trade, character — then close it.", NoticeKind.Info);
+            done = await FindRealAsync(relocate: row);
         }
 
-        if (results.TotalCount <= FewEnoughToTry) await FindRealAsync(relocate: row);
+        if (!done) return false;
+
+        // The cheat is found: every other line filed under it that still points at last time goes.
+        // Only under a name: loose, unnamed entries may be separate cheats entirely.
+        var stale = string.IsNullOrWhiteSpace(row.Group)
+            ? []
+            : Cheats.Where(c => !ReferenceEquals(c, row) && c.NeedsFinding && c.Group == row.Group).ToList();
+        foreach (var old in stale)
+        {
+            Cheats.Remove(old);
+            _table.Entries.Remove(old.Entry);
+        }
+        CheatsChanged();
+        Notify(stale.Count > 0
+            ? $"Found {name} again, and cleared {stale.Count} old address{(stale.Count == 1 ? "" : "es")} saved with it."
+            : $"Found {name} again.", NoticeKind.Success);
+        return true;
     }
 
     private bool _findingReal;
@@ -1511,6 +1587,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
                 Description = SuggestDescription(),
                 Address = AddressSpec.ForAddress(Process, row.Address),
                 FreezeValue = row.ValueText,
+                LastSeen = row.ValueText,
                 Group = group
             };
             entry.SetInterpretation(row.Interpretation);

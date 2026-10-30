@@ -66,6 +66,7 @@ public class UserPathTests
     [Fact]
     public Task Find_keep_set_and_freeze_a_value_through_the_window() => HeadlessApp.Session.Dispatch(() =>
     {
+        ResetLibrary();
         using var target = WatchTargetProcess.Start("hold", HeldValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using var outside = TargetProcess.Open(target.Pid, out string why);
         Assert.True(outside is not null, why);
@@ -173,6 +174,7 @@ public class UserPathTests
     [Fact]
     public Task A_huge_result_set_only_builds_the_rows_on_screen() => HeadlessApp.Session.Dispatch(() =>
     {
+        ResetLibrary();
         using var target = WatchTargetProcess.Start("hold", "0");
 
         var window = new MainWindow();
@@ -207,6 +209,7 @@ public class UserPathTests
     [Fact]
     public Task Find_the_real_one_picks_the_value_the_copies_follow() => HeadlessApp.Session.Dispatch(() =>
     {
+        ResetLibrary();
         using var target = WatchTargetProcess.Start("mirror", "987654321");
         using var outside = TargetProcess.Open(target.Pid, out string why);
         Assert.True(outside is not null, why);
@@ -262,6 +265,7 @@ public class UserPathTests
     [Fact]
     public Task Find_it_again_brings_a_saved_value_back_after_a_restart() => HeadlessApp.Session.Dispatch(() =>
     {
+        ResetLibrary();
         const string Value = "123123123";
         ulong oldField;
 
@@ -289,6 +293,9 @@ public class UserPathTests
             WaitFor(() => vm.Verdict.StartsWith("Found it", StringComparison.Ordinal) ? vm : null, "not found: " + vm.Notice, seconds: 20);
             var row = vm.Cheats.Single(c => c.Entry.Address.Resolve(vm.Process!) == target.Field);
             row.Frozen = true;
+            row.Group = "gold";
+            // A second stale line under the same cheat, as an earlier search would have left.
+            vm.AddResults([vm.Results!.Cast<ResultRow>().First(r => r.Address != target.Field)], "gold");
             oldField = target.Field;
             vm.SaveTableCommand.Execute(null);
             window.Close();
@@ -309,20 +316,13 @@ public class UserPathTests
             AttachTo(vm, restarted);
             Settle(300);
 
-            var row = vm.Cheats.Single();
-            Assert.True(row.NeedsFinding, "a plain address from the last session was trusted");
-            Assert.Equal(string.Empty, vm.FreezeStatus);
-            Assert.True(Button(window, "Find it again").IsEffectivelyVisible);
-
-            Click(window, Button(window, "Find it again"));
-            var prompt = WaitFor(() => window.OwnedWindows.OfType<ValuePromptWindow>().FirstOrDefault(), "Find it again asked nothing");
-            prompt.GetVisualDescendants().OfType<TextBox>().First().Text = Value;
-            Click(prompt, Button(prompt, "Apply"));
-
-            WaitFor(() => row.NeedsFinding ? null : vm, "it was not found again: " + vm.Verdict + " / " + vm.Notice, seconds: 40);
+            // Found again by itself, from the value it had last time: nothing is typed.
+            var row = vm.Cheats.Single(c => c.Frozen);
+            WaitFor(() => row.NeedsFinding ? null : vm, "it was not found again by itself: " + vm.Verdict + " / " + vm.Notice, seconds: 40);
+            Assert.Empty(window.OwnedWindows.OfType<ValuePromptWindow>());
             Assert.Equal(restarted.Field, row.Entry.Address.Resolve(vm.Process!));
             Assert.Contains("frozen", vm.FreezeStatus);
-            Assert.Single(vm.Cheats);
+            Assert.Single(vm.Cheats); // the stale line saved with it was cleared
             window.Close();
             Settle();
         }
@@ -343,6 +343,19 @@ public class UserPathTests
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /// <summary>
+    /// Every test starts with no saved cheats: a table another test saved for the stand-in game
+    /// would be loaded on attach, and found again automatically, under this test's feet. The
+    /// library lives in the tests' own temporary profile, never the user's.
+    /// </summary>
+    private static void ResetLibrary()
+    {
+        string root = Cheatmaster.Core.Cheats.CheatLibrary.DefaultRoot;
+        Assert.StartsWith(Path.GetTempPath(), root);
+        if (!Directory.Exists(root)) return;
+        foreach (string file in Directory.EnumerateFiles(root, "*.cmt")) File.Delete(file);
+    }
 
     private static Button Button(Control root, string content) =>
         root.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.IsEffectivelyVisible && Equals(b.Content, content))
