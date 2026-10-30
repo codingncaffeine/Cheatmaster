@@ -133,15 +133,18 @@ public class UserPathTests
                          ?? throw new Xunit.Sdk.XunitException("the result's row is not on screen");
         Click(window, rowControl);
         Assert.Same(hit, grid.SelectedItem);
+        // The tests share one library, so a table saved by another test may already be loaded.
+        int before = vm.Cheats.Count;
         window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
         Settle();
-        Assert.True(vm.Cheats.Count == 1,
-            $"Enter on the selected result added {vm.Cheats.Count}; focus was on {TopLevel.GetTopLevel(grid)?.FocusManager?.GetFocusedElement()}");
-        Assert.Equal(target.Field, vm.Cheats[0].Entry.Address.Resolve(vm.Process));
+        Assert.True(vm.Cheats.Count == before + 1,
+            $"Enter on the selected result added {vm.Cheats.Count - before}; focus was on {TopLevel.GetTopLevel(grid)?.FocusManager?.GetFocusedElement()}");
+        var kept = vm.Cheats[^1];
+        Assert.Equal(target.Field, kept.Entry.Address.Resolve(vm.Process));
 
         // Write a new value through the Set value prompt.
         var cheats = window.FindControl<DataGrid>("CheatsGrid")!;
-        cheats.SelectedItem = vm.Cheats[0];
+        cheats.SelectedItem = kept;
         Settle();
         Click(window, Button(window, "Set value…"));
         var prompt = WaitFor(() => window.OwnedWindows.OfType<ValuePromptWindow>().FirstOrDefault(), "the value prompt never opened");
@@ -152,11 +155,11 @@ public class UserPathTests
 
         // Freeze it from the row's own check box. Holding the value is covered against a real
         // process by FreezerTests in the core suite; here the check is that the row's box reaches it.
-        var freeze = cheats.GetVisualDescendants().OfType<CheckBox>().First(c => c.DataContext is CheatRow);
+        var freeze = cheats.GetVisualDescendants().OfType<CheckBox>().First(c => ReferenceEquals(c.DataContext, kept));
         Click(window, freeze);
         Settle();
-        Assert.True(vm.Cheats[0].Frozen, "the row's check box did not freeze it");
-        Assert.Equal("1 frozen", vm.FreezeStatus);
+        Assert.True(kept.Frozen, "the row's check box did not freeze it");
+        Assert.Contains("frozen", vm.FreezeStatus);
 
         Assert.True(sink.Lines.Count == 0, "binding errors:\n" + string.Join("\n", sink.Lines.Distinct()));
         window.Close();
@@ -192,6 +195,50 @@ public class UserPathTests
         Assert.True(results.Count > 10_000, $"expected a huge result set, got {results.Count}");
         Assert.True(results.RealizedCount < 500,
             $"the grid built {results.RealizedCount:N0} rows for {results.Count:N0} results");
+
+        window.Close();
+        Settle();
+    }, CancellationToken.None);
+
+    /// <summary>
+    /// A game keeps copies of a number for its screens, and every copy follows the real one
+    /// through any search. The app has to tell them apart by test, and pick the real one.
+    /// </summary>
+    [Fact]
+    public Task Find_the_real_one_picks_the_value_the_copies_follow() => HeadlessApp.Session.Dispatch(() =>
+    {
+        using var target = WatchTargetProcess.Start("mirror", "987654321");
+        using var outside = TargetProcess.Open(target.Pid, out string why);
+        Assert.True(outside is not null, why);
+        // Wait for the stand-in to make its copies.
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (outside!.ReadValue<int>(target.Field + 24) != 987654321 && DateTime.UtcNow < until) Thread.Sleep(20);
+
+        var window = new MainWindow();
+        var vm = window.ViewModel;
+        vm.Guide.DismissCommand.Execute(null);
+        window.Show();
+        Settle(200);
+
+        vm.Attach(ProcessList.Enumerate(includeSystem: true).First(p => p.Pid == target.Pid));
+        WaitFor(() => vm.IsAttached ? vm : null, "attaching never finished: " + vm.Notice);
+
+        vm.ValueText = "987654321";
+        vm.ScanCommand.Execute(null);
+        WaitFor(() => !vm.IsScanning && vm.HasResults ? vm : null, "the scan found nothing: " + vm.Notice, seconds: 60);
+        Settle(200);
+
+        Assert.True(vm.Results!.TotalCount is >= 4 and <= 8, $"expected the value and its copies, got {vm.Results.TotalCount} addresses");
+        Assert.True(vm.CanFindReal, "Find the real one was not offered: " + vm.Verdict);
+
+        Click(window, Button(window, "Find the real one"));
+        WaitFor(() => vm.Verdict.StartsWith("Found it", StringComparison.Ordinal) ? vm : null,
+            "the real one was not found: " + vm.Verdict + " / " + vm.Notice, seconds: 20);
+
+        Assert.Equal(target.Field, vm.Cheats[^1].Entry.Address.Resolve(vm.Process!));
+        // Put back as it was, and the copies follow it again.
+        WaitFor(() => outside.ReadValue<int>(target.Field + 8) == 987654321 ? vm : null, "the copies did not settle back");
+        Assert.Equal(987654321, outside.ReadValue<int>(target.Field));
 
         window.Close();
         Settle();

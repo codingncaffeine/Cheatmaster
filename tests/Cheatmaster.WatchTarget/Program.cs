@@ -26,7 +26,10 @@ internal static class Program
     {
         // "hold N": a value that only ever changes from outside, the way a score sits still until
         // the player does something. The UI tests search for it, then write and freeze it.
-        bool hold = args.Length == 2 && args[0] == "hold";
+        // "mirror N": like hold, plus three copies refreshed from the real value, the way a game keeps
+        // copies of a number for its screens. The tests tell the real one from the copies.
+        bool mirror = args.Length == 2 && args[0] == "mirror";
+        bool hold = args.Length == 2 && (args[0] == "hold" || mirror);
         int held = hold ? int.Parse(args[1], CultureInfo.InvariantCulture) : 0;
 
         // Linux only lets a program debug its own children unless the target says otherwise, and
@@ -54,6 +57,11 @@ internal static class Program
         {
             if (!hold) Store(block, value++);
             seen += Load(block);
+            if (mirror && Environment.TickCount64 % 100 < 4)
+            {
+                int real = Load(block);
+                for (int copy = 1; copy <= 3; copy++) *(int*)(block + FieldOffset + copy * 8) = real;
+            }
             Thread.Sleep(2);
         }
 

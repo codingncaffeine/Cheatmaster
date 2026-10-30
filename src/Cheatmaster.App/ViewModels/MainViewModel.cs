@@ -67,6 +67,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         FreezeAtValueCommand = new RelayCommand(o => SetValueForSelected(o, alsoFreeze: true));
         GroupSelectedCommand = new RelayCommand(GroupSelected);
         AddAndTestCommand = new RelayCommand(AddAndTest);
+        FindRealCommand = new RelayCommand(FindReal, () => !IsFindingReal);
         RecheckRoutesCommand = new RelayCommand(RecheckRoutes, () => IsAttached && !IsScanning);
         ShowScannerCommand = new RelayCommand(() => IsLibraryView = false);
         ShowLibraryCommand = new RelayCommand(() => IsLibraryView = true);
@@ -543,6 +544,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
     public RelayCommand AddAndTestCommand { get; }
 
+    public RelayCommand FindRealCommand { get; }
+
     private bool CanScan => IsAttached && !IsScanning &&
         (!NeedsValue || UserValue.Parse(ValueText).IsValid) &&
         (!NeedsSecondValue || UserValue.Parse(Value2Text).IsValid);
@@ -889,6 +892,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     {
         Raise(nameof(HasLikely));
         Raise(nameof(LikelyText));
+        Raise(nameof(CanFindReal));
 
         if (results.Count == 0)
         {
@@ -919,7 +923,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         if (left <= FewEnoughToTry)
         {
             Verdict = $"Nearly there — {left} addresses left.";
-            VerdictDetail = "Some of these are copies the game only shows on screen. Press Add and test it for the most likely one; if the game's number does not change, double-click the next one in the list and use Set value on it.";
+            VerdictDetail = "Games keep copies of a number for their screens, and only one of these is the real one. Press Find the real one, then open and close the game screen that shows the number.";
             return;
         }
 
@@ -928,6 +932,125 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     }
 
     private bool HasScanHistory => Session?.CanUndo == true;
+
+    private bool _findingReal;
+
+    /// <summary>True while candidates are being tested and the player is asked to refresh the game's screen.</summary>
+    public bool IsFindingReal
+    {
+        get => _findingReal;
+        private set
+        {
+            if (!Set(ref _findingReal, value)) return;
+            Raise(nameof(CanFindReal));
+            FindRealCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Several candidates left: worth telling the real value from its copies by test.</summary>
+    public bool CanFindReal => HasLikely && Results is { TotalCount: > 1 } && !IsFindingReal;
+
+    /// <summary>
+    /// Tells the real value from the copies a game keeps for its screens.
+    ///
+    /// A game holds the number it uses in one place and refreshes the copies it shows from it.
+    /// So each candidate gets a slightly different number, the player opens the screen that shows
+    /// it, and whichever candidate's number spreads to the others is the real one. Every candidate
+    /// that turns out to be a copy is left to the game to refresh; the real one is put back.
+    /// </summary>
+    private async void FindReal()
+    {
+        if (Results is not { TotalCount: > 1 } results || Process is not { } process || IsFindingReal) return;
+
+        var rows = new List<ResultRow>();
+        for (int i = 0; i < results.TotalCount && i < FewEnoughToTry; i++) rows.Add(results[i]);
+
+        // One marker per candidate: its own value nudged by a different small step, so the player
+        // sees nothing stranger than a number a little off for a moment.
+        var originals = new ulong[rows.Count];
+        var markers = new double[rows.Count];
+        var written = new bool[rows.Count];
+        // A heap buffer: this method awaits, and a stack span cannot live across that.
+        byte[] buffer = new byte[8];
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var interp = rows[i].Interpretation;
+            if (!process.ReadExact(rows[i].Address, buffer.AsSpan(0, interp.Width))) continue;
+            originals[i] = Raw.ReadBits(interp.Type, buffer);
+            double now = interp.Decode(originals[i]);
+            foreach (double candidate in new[] { now + i + 1, now - i - 1 })
+            {
+                if (!interp.TryEncodeExact(candidate, out ulong bits) || interp.Decode(bits) != candidate) continue;
+                markers[i] = candidate;
+                Raw.WriteBytes(interp.Type, bits, buffer);
+                written[i] = process.Write(rows[i].Address, buffer.AsSpan(0, interp.Width));
+                break;
+            }
+        }
+
+        if (written.Count(w => w) < 2)
+        {
+            Notify("These addresses could not be tested. Try Add and test it on each in turn.", NoticeKind.Warning);
+            return;
+        }
+
+        IsFindingReal = true;
+        Notify("Now open the game screen that shows this number — inventory, trade, character — then close it again. Cheatmaster is watching for which address the game copies from.", NoticeKind.Info);
+
+        int real = -1;
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while (DateTime.UtcNow < deadline && real < 0 && Process == process)
+        {
+            await Task.Delay(250);
+            var now = new double[rows.Count];
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var interp = rows[i].Interpretation;
+                now[i] = process.ReadExact(rows[i].Address, buffer.AsSpan(0, interp.Width))
+                    ? interp.Decode(Raw.ReadBits(interp.Type, buffer))
+                    : double.NaN;
+            }
+
+            // The real one is the candidate whose marker now also sits in other candidates.
+            for (int i = 0; i < rows.Count && real < 0; i++)
+            {
+                if (!written[i] || now[i] != markers[i]) continue;
+                int copies = 0;
+                for (int j = 0; j < rows.Count; j++) if (j != i && now[j] == markers[i]) copies++;
+                if (copies > 0) real = i;
+            }
+        }
+
+        IsFindingReal = false;
+
+        if (real < 0)
+        {
+            // Nothing spread: put every candidate back as it was.
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (!written[i]) continue;
+                Raw.WriteBytes(rows[i].Interpretation.Type, originals[i], buffer);
+                process.Write(rows[i].Address, buffer.AsSpan(0, rows[i].Interpretation.Width));
+            }
+            Notify("No address passed its number on to the others, so they were all put back. Try Add and test it on each in turn, checking the game after each.", NoticeKind.Warning);
+            return;
+        }
+
+        // Put the real value back; the game will refresh its copies from it.
+        var winner = rows[real];
+        Raw.WriteBytes(winner.Interpretation.Type, originals[real], buffer);
+        process.Write(winner.Address, buffer.AsSpan(0, winner.Interpretation.Width));
+
+        int before = Cheats.Count;
+        AddResult(winner);
+        Verdict = $"Found it: {winner.AddressText}.";
+        VerdictDetail = rows.Count == 2
+            ? "The other address is a copy the game shows on screen. This one is in your cheat table: set it or tick Freeze."
+            : $"The other {rows.Count - 1} are copies the game shows on screen. This one is in your cheat table: set it or tick Freeze.";
+        Notify(Cheats.Count > before
+            ? $"{winner.AddressText} is the real value — added to your cheat table."
+            : $"{winner.AddressText} is the real value — it is already in your cheat table.", NoticeKind.Success);
+    }
 
     /// <summary>True once the list is short enough that the top row is worth trying straight away.</summary>
     public bool HasLikely => Results is { IsByAddress: true, TotalCount: > 0 } r && r.TotalCount <= FewEnoughToTry;
