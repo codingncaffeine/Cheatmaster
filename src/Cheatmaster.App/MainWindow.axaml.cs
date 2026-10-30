@@ -220,11 +220,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (CheatsGrid.SelectedItem is not CheatRow row)
-        {
-            _viewModel.Notify("Select the entry you want a stable address for.", NoticeKind.Info);
-            return;
-        }
+        if (SelectedLiveCheat("find a stable address for") is not { } row) return;
 
         ulong address = row.Entry.Address.Resolve(process);
         if (address == 0 || !row.Entry.TryReadValue(process, out ulong bits))
@@ -239,6 +235,27 @@ public partial class MainWindow : Window
     }
 
     private void OnSelectAllCheats(object? sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
+
+    private void OnFindAgain(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is CheatRow row) _viewModel.FindAgain(row);
+    }
+
+    /// <summary>The selected cheat, unless it is a saved address that has not been found again yet.</summary>
+    private CheatRow? SelectedLiveCheat(string purpose)
+    {
+        if (CheatsGrid.SelectedItem is not CheatRow row)
+        {
+            _viewModel.Notify($"Select the entry you want to {purpose}.", NoticeKind.Info);
+            return null;
+        }
+        if (row.NeedsFinding)
+        {
+            _viewModel.Notify("That entry still points where the value was last time. Press Find it again on it first.", NoticeKind.Info);
+            return null;
+        }
+        return row;
+    }
 
     /// <summary>
     /// Opens the bytes around an address. This is where a value stops being one number and starts
@@ -265,11 +282,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (CheatsGrid.SelectedItem is not CheatRow row)
-        {
-            _viewModel.Notify("Select the entry you want to look at.", NoticeKind.Info);
-            return;
-        }
+        if (SelectedLiveCheat("look at") is not { } row) return;
 
         ulong address = row.Entry.Address.Resolve(process);
         if (address == 0)
@@ -305,11 +318,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (CheatsGrid.SelectedItem is not CheatRow row)
-        {
-            _viewModel.Notify("Select the entry you want to watch.", NoticeKind.Info);
-            return;
-        }
+        if (SelectedLiveCheat("watch") is not { } row) return;
 
         ulong address = row.Entry.Address.Resolve(process);
         if (address == 0 || !row.Entry.TryReadValue(process, out ulong bits))

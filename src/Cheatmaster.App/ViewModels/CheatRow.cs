@@ -76,6 +76,31 @@ public sealed class CheatRow : ObservableObject
 
     public bool IsSessionOnly => Entry.Address.IsSessionOnly;
 
+    private bool _needsFinding;
+
+    /// <summary>
+    /// A plain address saved in an earlier session. The game puts things somewhere new each time it
+    /// starts, so until it is found again this address means nothing: it is not read, written or
+    /// frozen, and the row offers Find it again instead.
+    /// </summary>
+    public bool NeedsFinding
+    {
+        get => _needsFinding;
+        set
+        {
+            if (!Set(ref _needsFinding, value)) return;
+            Raise(nameof(HasRouteText));
+            if (value && _valueText != "—")
+            {
+                _valueText = "—";
+                Raise(nameof(ValueText));
+            }
+        }
+    }
+
+    /// <summary>The route column shows a route's age; a row that needs finding shows a button instead.</summary>
+    public bool HasRouteText => !NeedsFinding;
+
     /// <summary>False when the module or pointer chain no longer resolves, so the row can grey out.</summary>
     public bool IsResolved
     {
@@ -201,7 +226,7 @@ public sealed class CheatRow : ObservableObject
     public bool TrySetValue(string text)
     {
         var process = _host.Process;
-        if (process is null) return false;
+        if (process is null || NeedsFinding) return false;
         if (!Entry.TryWriteDisplayValue(process, text)) return false;
 
         // A frozen entry would immediately put the old value back.
@@ -218,6 +243,7 @@ public sealed class CheatRow : ObservableObject
 
     public void Refresh(TargetProcess? process)
     {
+        if (NeedsFinding) return;
         if (process is null)
         {
             IsResolved = false;

@@ -74,6 +74,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         Library = new LibraryViewModel(_library) { FetchArtworkEnabled = Settings.FetchArtwork };
         Library.OpenRequested += OnLibraryOpenRequested;
+        Library.FindAgainRequested += OnLibraryFindAgain;
 
         SelectedProfile = Profiles.FirstOrDefault(p => p.Profile == Settings.Profile) ?? Profiles[1];
         SelectedRounding = RoundingModes.FirstOrDefault(r => r.Mode == Settings.Rounding) ?? RoundingModes[1];
@@ -118,6 +119,25 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     }
 
     public bool IsScannerView => !_isLibraryView;
+
+    /// <summary>Find it again from the library: the game has to be running and attached.</summary>
+    private void OnLibraryFindAgain(LibraryGameRow game, string group)
+    {
+        if (Process is null || _game is null || _game.Key != game.Key)
+        {
+            Notify($"Start {game.Name} and attach Cheatmaster to it, then press Find it again.", NoticeKind.Info);
+            return;
+        }
+
+        var row = Cheats.FirstOrDefault(c => (c.Group ?? string.Empty) == group && c.NeedsFinding)
+                  ?? Cheats.FirstOrDefault(c => (c.Group ?? string.Empty) == group && c.IsSessionOnly);
+        if (row is null)
+        {
+            Notify("That cheat already finds its own address.", NoticeKind.Info);
+            return;
+        }
+        FindAgain(row);
+    }
 
     private void OnLibraryOpenRequested(LibraryGameRow row)
     {
@@ -635,6 +655,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         _freezer.Attach(null);
         _freezer.Update([]);
         Session = null;
+        _routeSearch?.Cancel();
         Process?.Dispose();
         Process = null;
         Results = null;
@@ -657,7 +678,12 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         if (_game is null) return;
 
         _table = Settings.AutoLoadTables ? _library.LoadOrCreate(_game) : CheatTable.ForGame(_game);
-        foreach (var entry in _table.Entries) Cheats.Add(new CheatRow(entry, this));
+        foreach (var entry in _table.Entries)
+        {
+            // A plain address from an earlier session points wherever the game happens to have put
+            // something else this time. Writing or freezing it could damage the game.
+            Cheats.Add(new CheatRow(entry, this) { NeedsFinding = entry.Address.IsSessionOnly });
+        }
 
         PushFreezeSet();
         _ = FetchGameMetadataAsync();
@@ -672,7 +698,13 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             if (routes > 0)
                 message += $" {routes} of them find their address through a route — re-check those now the game has restarted.";
 
-            Notify(message, NoticeKind.Success);
+            int lost = Cheats.Count(static c => c.NeedsFinding);
+            if (lost > 0)
+                message += lost == 1
+                    ? " One of them was saved as a plain address, which moves each time the game starts: press Find it again on it."
+                    : $" {lost} of them were saved as plain addresses, which move each time the game starts: press Find it again on each.";
+
+            Notify(message, lost > 0 ? NoticeKind.Info : NoticeKind.Success);
         }
         else
         {
@@ -933,6 +965,134 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
     private bool HasScanHistory => Session?.CanUndo == true;
 
+    /// <summary>Adds a result to the table, or finds it there already, and returns its row.</summary>
+    private CheatRow? KeepResult(ResultRow result)
+    {
+        if (Process is not { } process) return null;
+        AddResult(result);
+        return Cheats.LastOrDefault(c => c.Entry.Address.Resolve(process) == result.Address);
+    }
+
+    /// <summary>Points an existing entry at where its value is now, keeping its name, hotkey and freeze.</summary>
+    private CheatRow? Relocate(CheatRow row, ResultRow found)
+    {
+        if (Process is not { } process) return null;
+        row.Entry.Address = AddressSpec.ForAddress(process, found.Address);
+        row.Entry.SetInterpretation(found.Interpretation);
+        row.NeedsFinding = false;
+        row.RaiseAddressChanged();
+        row.Refresh(process);
+        CheatsChanged();
+        return row;
+    }
+
+    private CancellationTokenSource? _routeSearch;
+
+    /// <summary>
+    /// Looks for a route that will find this value again after the game restarts, in the background
+    /// and without asking: if one turns up the entry quietly starts using it, and if none does the
+    /// entry stays as it is and Find it again covers the next session. A deep search, since big
+    /// engines keep values many pointers and large offsets away from anything fixed.
+    /// </summary>
+    /// <summary>Off in tests that need a plain address to stay plain.</summary>
+    internal bool SeekRoutesInBackground { get; set; } = true;
+
+    private void SeekStableRoute(CheatRow row)
+    {
+        if (!SeekRoutesInBackground || Process is not { } process || !row.Entry.Address.IsSessionOnly) return;
+        ulong target = row.Entry.Address.Resolve(process);
+        if (target == 0 || !row.Entry.TryReadValue(process, out ulong expected)) return;
+
+        _routeSearch?.Cancel();
+        var cancel = new CancellationTokenSource();
+        _routeSearch = cancel;
+        var type = row.Entry.Type;
+        Status = $"Looking for a way to find {row.Description} after a restart…";
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var map = PointerMap.Build(process, RegionFilter.Everything, ct: cancel.Token);
+                var routes = PointerScanner.Find(process, map, target,
+                    new PointerScanOptions { MaxDepth = 6, MaxOffset = 0x1000, MaxResults = 50 }, ct: cancel.Token);
+                return PointerScanner.Verify(process, routes, type, expected, cancel.Token);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ScanException)
+            {
+                return [];
+            }
+        }, cancel.Token).ContinueWith(task =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (cancel.IsCancellationRequested || !ReferenceEquals(Process, process) || !Cheats.Contains(row)) return;
+                var best = task.IsCompletedSuccessfully ? task.Result.FirstOrDefault() : null;
+                if (best is null)
+                {
+                    Status = $"No lasting route for {row.Description} in this game — Find it again will bring it back next time.";
+                    return;
+                }
+                row.Entry.Address = best.ToAddressSpec();
+                row.Entry.LastVerified = DateTimeOffset.Now;
+                row.RaiseAddressChanged();
+                row.RaiseRouteChanged();
+                CheatsChanged();
+                Notify($"{row.Description} will be found automatically next time the game starts.", NoticeKind.Success);
+            });
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Brings back a cheat saved as a plain address: the player types the number the game shows,
+    /// and the search, narrowing and copy test run for them. The entry is updated in place, so its
+    /// name, hotkey and freeze come with it.
+    /// </summary>
+    public async void FindAgain(CheatRow row)
+    {
+        if (Process is null || PromptForValue is not { } prompt) return;
+        string name = string.IsNullOrWhiteSpace(row.Group) ? row.Description : row.Group;
+
+        string? value = await prompt($"Find {name} again",
+            $"Type the number the game shows for {name} right now.", string.Empty);
+        if (string.IsNullOrWhiteSpace(value)) return;
+
+        IsLibraryView = false;
+        NewScan();
+        SelectedTypeOption = TypeOptions.FirstOrDefault(t => t.Type == row.Entry.Type && row.Entry.Interpretation.IsPlain)
+                             ?? TypeOptions[0];
+        ValueText = value.Trim();
+        await RunScanAsync(first: true);
+
+        for (int round = 0; round < 6 && Results is { TotalCount: > FewEnoughToTry }; round++)
+        {
+            string? next = await prompt($"Find {name} again",
+                $"{Results.TotalCount:N0} places hold that number. Change {name} in the game — spend some or pick some up — then type the new number.",
+                string.Empty);
+            if (string.IsNullOrWhiteSpace(next)) return;
+            ValueText = next.Trim();
+            await RunScanAsync(first: false);
+        }
+
+        if (Results is not { TotalCount: > 0 } results)
+        {
+            Notify($"{name} was not found with that number. Check the number in the game and try Find it again.", NoticeKind.Warning);
+            return;
+        }
+
+        if (results.TotalCount == 1)
+        {
+            if (Relocate(row, results[0]) is { } found)
+            {
+                Notify($"Found {name} again.", NoticeKind.Success);
+                SeekStableRoute(found);
+            }
+            return;
+        }
+
+        if (results.TotalCount <= FewEnoughToTry) await FindRealAsync(relocate: row);
+    }
+
     private bool _findingReal;
 
     /// <summary>True while candidates are being tested and the player is asked to refresh the game's screen.</summary>
@@ -958,9 +1118,15 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     /// it, and whichever candidate's number spreads to the others is the real one. Every candidate
     /// that turns out to be a copy is left to the game to refresh; the real one is put back.
     /// </summary>
-    private async void FindReal()
+    private async void FindReal() => await FindRealAsync(relocate: null);
+
+    /// <summary>
+    /// Runs the copy test. With <paramref name="relocate"/> the real address goes into that existing
+    /// entry; otherwise it is added to the table. Returns false when nothing could be decided.
+    /// </summary>
+    private async Task<bool> FindRealAsync(CheatRow? relocate)
     {
-        if (Results is not { TotalCount: > 1 } results || Process is not { } process || IsFindingReal) return;
+        if (Results is not { TotalCount: > 1 } results || Process is not { } process || IsFindingReal) return false;
 
         var rows = new List<ResultRow>();
         for (int i = 0; i < results.TotalCount && i < FewEnoughToTry; i++) rows.Add(results[i]);
@@ -991,7 +1157,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         if (written.Count(w => w) < 2)
         {
             Notify("These addresses could not be tested. Try Add and test it on each in turn.", NoticeKind.Warning);
-            return;
+            return false;
         }
 
         IsFindingReal = true;
@@ -1033,7 +1199,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
                 process.Write(rows[i].Address, buffer.AsSpan(0, rows[i].Interpretation.Width));
             }
             Notify("No address passed its number on to the others, so they were all put back. Try Add and test it on each in turn, checking the game after each.", NoticeKind.Warning);
-            return;
+            return false;
         }
 
         // Put the real value back; the game will refresh its copies from it.
@@ -1041,7 +1207,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Raw.WriteBytes(winner.Interpretation.Type, originals[real], buffer);
         process.Write(winner.Address, buffer.AsSpan(0, winner.Interpretation.Width));
 
-        AddResult(winner);
+        var kept = relocate is not null ? Relocate(relocate, winner) : KeepResult(winner);
 
         // The copies are now known to be copies: any of them already in the table would only
         // fill the library with lines that do nothing when changed.
@@ -1059,10 +1225,13 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         VerdictDetail = (rows.Count == 2
                 ? "The other address was a copy the game shows on screen."
                 : $"The other {rows.Count - 1} were copies the game shows on screen.")
-            + " This one is in your cheat table: set it or tick Freeze. To keep it working after the game restarts, right-click it and choose Find a stable address.";
+            + " This one is in your cheat table: set it or tick Freeze.";
         Notify($"{winner.AddressText} is the real value — it is in your cheat table" +
                (doomed.Count > 0 ? $", and {doomed.Count} cop{(doomed.Count == 1 ? "y was" : "ies were")} taken out of it." : "."),
             NoticeKind.Success);
+
+        if (kept is not null) SeekStableRoute(kept);
+        return true;
     }
 
     /// <summary>True once the list is short enough that the top row is worth trying straight away.</summary>
@@ -1584,7 +1753,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         RequestSave();
     }
 
-    private void PushFreezeSet() => _freezer.Update(_table.Entries);
+    /// <summary>Entries waiting to be found again point at nothing, and are never written.</summary>
+    private void PushFreezeSet() => _freezer.Update(Cheats.Where(static c => !c.NeedsFinding).Select(static c => c.Entry).ToList());
 
     private void RequestSave()
     {

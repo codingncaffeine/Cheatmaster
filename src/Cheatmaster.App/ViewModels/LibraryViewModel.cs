@@ -10,7 +10,7 @@ using Cheatmaster.Core.Cheats;
 namespace Cheatmaster.App.ViewModels;
 
 /// <summary>One saved cheat, shown read-only in the library detail pane.</summary>
-public sealed record SavedCheatRow(string Description, string Address, string Type, string FrozenAt, string Hotkey)
+public sealed record SavedCheatRow(string Description, string Address, string Type, string FrozenAt, string Hotkey, bool Moves = false)
 {
     public bool IsFrozen => !string.IsNullOrEmpty(FrozenAt);
 }
@@ -45,6 +45,9 @@ public sealed class LibraryGroupRow : ObservableObject
     public int FrozenCount => Items.Count(static i => i.IsFrozen);
 
     public bool AnyFrozen => FrozenCount > 0;
+
+    /// <summary>Saved as plain addresses, which move each time the game starts.</summary>
+    public bool CanFindAgain => Items.Any(static i => i.Moves);
 
     public string Summary
     {
@@ -240,6 +243,10 @@ public sealed class LibraryViewModel : ObservableObject
         RenameGroupCommand = new RelayCommand(RenameGroup);
         SetGroupValueCommand = new RelayCommand(SetGroupValue);
         ReleaseGroupCommand = new RelayCommand(ReleaseGroup);
+        FindAgainCommand = new RelayCommand(o =>
+        {
+            if (o is LibraryGroupRow group && Selected is { } game) FindAgainRequested?.Invoke(game, group.Name);
+        });
     }
 
     public ObservableCollection<LibraryGameRow> Games { get; } = [];
@@ -256,6 +263,11 @@ public sealed class LibraryViewModel : ObservableObject
 
     /// <summary>Raised when the user asks to work on a game that is not the attached one.</summary>
     public event Action<LibraryGameRow>? OpenRequested;
+
+    /// <summary>Find it again on a saved cheat: the game, and the name the cheat is filed under.</summary>
+    public event Action<LibraryGameRow, string>? FindAgainRequested;
+
+    public RelayCommand FindAgainCommand { get; }
 
     public bool FetchArtworkEnabled { get; set; } = true;
 
@@ -304,7 +316,8 @@ public sealed class LibraryViewModel : ObservableObject
                 entry.Address.Display,
                 entry.Interpretation.Label,
                 entry.Frozen ? entry.FreezeValue : string.Empty,
-                string.IsNullOrWhiteSpace(entry.Hotkey) ? "—" : entry.Hotkey));
+                string.IsNullOrWhiteSpace(entry.Hotkey) ? "—" : entry.Hotkey,
+                entry.Address.IsSessionOnly));
 
             var row = new LibraryGroupRow(group.Key, rows);
 

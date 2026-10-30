@@ -536,13 +536,19 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTemplateColumn Header="Route" Width="90" IsReadOnly="True">
+                                        <DataGridTemplateColumn Header="Route" Width="120" IsReadOnly="True">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate x:DataType="vm:CheatRow">
-                                                    <TextBlock Text="{Binding RouteText}" Margin="10,0,0,0"
+                                                    <Panel>
+                                                    <Button Content="Find it again" Classes="primary" Padding="8,2" MinHeight="22"
+                                                            FontSize="11" Margin="6,0" IsVisible="{Binding NeedsFinding}"
+                                                            Click="OnFindAgain"
+                                                            ToolTip.Tip="This was saved as a plain address, which moves each time the game starts. Type the number the game shows and Cheatmaster finds it again." />
+                                                    <TextBlock Text="{Binding RouteText}" Margin="10,0,0,0" IsVisible="{Binding HasRouteText}"
                                                                Foreground="{StaticResource SuccessBrush}"
                                                                ToolTip.Tip="When this route was last seen to still reach a value"
                                                                Classes.unchecked="{Binding RouteText, Converter={x:Static inf:EqualsConverter.Instance}, ConverterParameter='not checked'}" />
+                                                    </Panel>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>

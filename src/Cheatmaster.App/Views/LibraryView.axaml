@@ -165,6 +165,11 @@
                                                                        FontSize="10" Foreground="{StaticResource SuccessBrush}" />
                                                         </Border>
 
+                                                        <Button Content="Find it again" Classes="primary" Padding="9,3" MinHeight="24" FontSize="11"
+                                                                IsVisible="{Binding CanFindAgain}"
+                                                                ToolTip.Tip="Saved addresses move each time the game starts. With the game running, type the number it shows and Cheatmaster finds this again."
+                                                                Command="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).FindAgainCommand}"
+                                                                CommandParameter="{Binding}" />
                                                         <Button Content="Value…" Padding="9,3" MinHeight="24" FontSize="11"
                                                                 ToolTip.Tip="Set the value this cheat is held at, ready for next time"
                                                                 Command="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).SetGroupValueCommand}"

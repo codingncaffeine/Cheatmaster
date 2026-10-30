@@ -255,6 +255,93 @@ public class UserPathTests
         Settle();
     }, CancellationToken.None);
 
+    /// <summary>
+    /// A cheat saved as a plain address, the game restarted: the entry must not touch the old
+    /// address, and Find it again must bring it back, freeze and all.
+    /// </summary>
+    [Fact]
+    public Task Find_it_again_brings_a_saved_value_back_after_a_restart() => HeadlessApp.Session.Dispatch(() =>
+    {
+        const string Value = "123123123";
+        ulong oldField;
+
+        // First session: find it, keep it, freeze it.
+        {
+            using var target = WatchTargetProcess.Start("mirror", Value);
+            WaitForCopies(target, Value);
+            var window = new MainWindow();
+            var vm = window.ViewModel;
+            vm.SeekRoutesInBackground = false;
+            vm.Guide.DismissCommand.Execute(null);
+            window.Show();
+            Settle(200);
+            AttachTo(vm, target);
+            vm.ClearCheatsCommand.Execute(null);
+            Settle(300);
+            foreach (var prompt in window.OwnedWindows.OfType<MessageWindow>().ToList()) Click(prompt, Button(prompt, "Yes"));
+            Settle(200);
+
+            vm.ValueText = Value;
+            vm.ScanCommand.Execute(null);
+            WaitFor(() => !vm.IsScanning && vm.HasResults ? vm : null, "the scan found nothing: " + vm.Notice, seconds: 60);
+            Settle(200);
+            Click(window, Button(window, "Find the real one"));
+            WaitFor(() => vm.Verdict.StartsWith("Found it", StringComparison.Ordinal) ? vm : null, "not found: " + vm.Notice, seconds: 20);
+            var row = vm.Cheats.Single(c => c.Entry.Address.Resolve(vm.Process!) == target.Field);
+            row.Frozen = true;
+            oldField = target.Field;
+            vm.SaveTableCommand.Execute(null);
+            window.Close();
+            Settle();
+        }
+
+        // The game starts again: the value is somewhere new.
+        using var restarted = WatchTargetProcess.Start("mirror", Value);
+        WaitForCopies(restarted, Value);
+        Assert.NotEqual(oldField, restarted.Field);
+        {
+            var window = new MainWindow();
+            var vm = window.ViewModel;
+            vm.SeekRoutesInBackground = false;
+            vm.Guide.DismissCommand.Execute(null);
+            window.Show();
+            Settle(200);
+            AttachTo(vm, restarted);
+            Settle(300);
+
+            var row = vm.Cheats.Single();
+            Assert.True(row.NeedsFinding, "a plain address from the last session was trusted");
+            Assert.Equal(string.Empty, vm.FreezeStatus);
+            Assert.True(Button(window, "Find it again").IsEffectivelyVisible);
+
+            Click(window, Button(window, "Find it again"));
+            var prompt = WaitFor(() => window.OwnedWindows.OfType<ValuePromptWindow>().FirstOrDefault(), "Find it again asked nothing");
+            prompt.GetVisualDescendants().OfType<TextBox>().First().Text = Value;
+            Click(prompt, Button(prompt, "Apply"));
+
+            WaitFor(() => row.NeedsFinding ? null : vm, "it was not found again: " + vm.Verdict + " / " + vm.Notice, seconds: 40);
+            Assert.Equal(restarted.Field, row.Entry.Address.Resolve(vm.Process!));
+            Assert.Contains("frozen", vm.FreezeStatus);
+            Assert.Single(vm.Cheats);
+            window.Close();
+            Settle();
+        }
+    }, CancellationToken.None);
+
+    private static void WaitForCopies(WatchTargetProcess target, string value)
+    {
+        using var outside = TargetProcess.Open(target.Pid, out _);
+        int want = int.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (outside!.ReadValue<int>(target.Field + 24) != want && DateTime.UtcNow < until) Thread.Sleep(20);
+    }
+
+    private static void AttachTo(MainViewModel vm, WatchTargetProcess target)
+    {
+        vm.Attach(ProcessList.Enumerate(includeSystem: true).First(p => p.Pid == target.Pid));
+        WaitFor(() => vm.IsAttached && vm.Process?.Pid == target.Pid ? vm : null, "attaching never finished: " + vm.Notice);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private static Button Button(Control root, string content) =>
