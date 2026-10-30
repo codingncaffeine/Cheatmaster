@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Cheatmaster
+GenericName=Memory Scanner
+Comment=Find a number you can see in a game, keep it, freeze it
+Exec=cheatmaster
+Icon=cheatmaster
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+Keywords=cheat;memory;scanner;trainer;game;freeze;value;
+StartupWMClass=Cheatmaster

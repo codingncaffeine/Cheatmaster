@@ -4,7 +4,7 @@
 
 # Cheatmaster
 
-A memory scanner and cheat table editor for Windows, built around one idea:
+A memory scanner and cheat table editor for Linux and Windows, built around one idea:
 
 **You should not have to know how a game stores a number in order to find it.**
 
@@ -85,28 +85,49 @@ both rounding and truncation. Set it to **Exact** when you want a literal match,
   works after a restart. Entries that can only be a raw address are marked as such.
 - Tables are individual files, so one game's cheats can be shared as one file
 
-## Requirements
+## Install
 
-- Windows 10 or 11, 64-bit
-- [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
+**Arch Linux:** `cheatmaster-bin` from the AUR.
 
-A 64-bit build attaches to both 64-bit and 32-bit targets. Most targets open without
-elevation; when one refuses, the app offers a one-click elevated restart rather than
-demanding a UAC prompt every launch.
+**Debian / Ubuntu:** the `.deb` from the [latest release](https://github.com/codingncaffeine/Cheatmaster/releases/latest).
+
+**Any other Linux:** the `linux-x64` tarball (or `linux-musl-x64` for Alpine and other musl
+systems). Extract anywhere and run `./cheatmaster`. Nothing else to install.
+
+**Windows 10 or 11:** the self-contained zip, or the smaller one that needs the
+[.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
+
+A 64-bit build attaches to both 64-bit and 32-bit targets.
+
+### Linux notes
+
+- **Memory access.** Most distributions only let a program read the memory of programs it
+  started itself (the Yama `ptrace_scope` setting). Games started by Steam are not, so
+  Cheatmaster offers **Allow memory access**, which asks for your password once and relaxes
+  the rule until the next restart. To make it permanent:
+  `echo 'kernel.yama.ptrace_scope = 0' | sudo tee /etc/sysctl.d/10-ptrace.conf`
+- **Wine and Proton games** are listed by their `.exe`, their modules are found by name, and
+  tables saved on Windows keep working.
+- **Hotkeys** work on X11, and on Wayland while a game running through XWayland has focus
+  (every Wine/Proton game by default).
+
+On Windows, most targets open without elevation; when one refuses, the app offers a one-click
+elevated restart rather than demanding a UAC prompt every launch.
 
 ## Building
 
 ```sh
-dotnet build -c Release
-dotnet test  -c Release
+./run.sh                      # build and start
+dotnet test -c Release        # engine and window tests
+packaging/build-release.sh    # every release artifact, into packaging/out
 ```
 
-The app is `src/Cheatmaster.App`, the engine is `src/Cheatmaster.Core`, and the engine has
-no UI dependency. `dotnet run --project tools/IconForge` regenerates the application icon
-from the source art.
+The app is `src/Cheatmaster.App` (Avalonia), the engine is `src/Cheatmaster.Core`, and the
+engine has no UI dependency. On Windows, `dotnet run --project tools/IconForge` regenerates the
+application icon from the source art.
 
 Start with `--diag` to surface data-binding problems in the app instead of only in the log
-at `%LOCALAPPDATA%\Cheatmaster\binding-errors.log`.
+(`binding-errors.log` in `~/.local/share/Cheatmaster`, or `%LOCALAPPDATA%\Cheatmaster` on Windows).
 
 ## Scope
 

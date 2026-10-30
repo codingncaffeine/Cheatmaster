@@ -19,3 +19,6 @@ local-notes/
 *.cmt
 *.CT
 scratch/
+
+# Release artifacts
+packaging/out/
