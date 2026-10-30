@@ -1,51 +1,39 @@
-<Window x:Class="Cheatmaster.App.Views.ValuePromptWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        x:Class="Cheatmaster.App.Views.ValuePromptWindow"
         Title="Set value"
-        Icon="/Assets/cheatmaster.ico"
+        Icon="/Assets/logo.png"
         SizeToContent="Height" Width="420"
-        ResizeMode="NoResize"
+        CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource AppBackgroundBrush}"
-        FontFamily="{StaticResource UiFont}"
-        FontSize="12.5"
-        Foreground="{StaticResource TextBrush}"
-        UseLayoutRounding="True"
-        WindowStyle="None"
+        WindowDecorations="None"
         ShowInTaskbar="False">
-
-    <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="34" ResizeBorderThickness="0" CornerRadius="0"
-                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
-    </WindowChrome.WindowChrome>
 
     <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
         <StackPanel>
-            <Grid Background="{StaticResource SurfaceBrush}" Height="34">
-                <TextBlock x:Name="TitleLabel" Text="Set value" Margin="14,0,0,0" VerticalAlignment="Center"
+            <Grid Name="TitleBar" Background="{StaticResource SurfaceBrush}" Height="34">
+                <TextBlock Name="TitleLabel" Text="Set value" Margin="14,0,0,0" VerticalAlignment="Center"
                            FontWeight="SemiBold" FontSize="12" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnCancel" />
-                </StackPanel>
+                <Button Classes="caption close" HorizontalAlignment="Right" Click="OnCancel" ToolTip.Tip="Close">
+                    <Path Classes="glyph" Data="{StaticResource IconClose}" />
+                </Button>
             </Grid>
 
             <StackPanel Margin="20,18,20,0">
-                <TextBlock x:Name="MessageLabel" TextWrapping="Wrap" FontSize="12.5"
+                <TextBlock Name="MessageLabel" TextWrapping="Wrap" FontSize="12.5"
                            Foreground="{StaticResource TextMutedBrush}" />
-                <TextBox x:Name="ValueBox" Style="{StaticResource MonoTextBox}" FontSize="16" Padding="10,8"
+                <TextBox Name="ValueBox" Classes="mono" FontSize="16" Padding="10,8"
                          Margin="0,12,0,0" KeyDown="OnValueKeyDown" />
-                <TextBlock x:Name="HintLabel" Margin="1,7,0,0" FontSize="11" TextWrapping="Wrap"
+                <TextBlock Name="HintLabel" Margin="1,7,0,0" FontSize="11" TextWrapping="Wrap"
                            Foreground="{StaticResource TextFaintBrush}" />
             </StackPanel>
 
             <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="0,1,0,0" Padding="16,12" Margin="0,18,0,0">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="Cancel" Click="OnCancel" MinWidth="90" Margin="0,0,8,0" IsCancel="True" />
-                    <Button x:Name="AcceptButton" Content="Apply" Click="OnAccept" MinWidth="110"
-                            Style="{StaticResource PrimaryButton}" IsDefault="True" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button Content="Cancel" Click="OnCancel" MinWidth="90" IsCancel="True" />
+                    <Button Name="AcceptButton" Content="Apply" Click="OnAccept" MinWidth="110"
+                            Classes="primary" IsDefault="True" />
                 </StackPanel>
             </Border>
         </StackPanel>

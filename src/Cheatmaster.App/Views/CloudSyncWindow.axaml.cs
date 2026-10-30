@@ -1,4 +1,5 @@
-using System.Windows;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Cheatmaster.App.Services;
 using Cheatmaster.App.ViewModels;
 
@@ -6,11 +7,13 @@ namespace Cheatmaster.App.Views;
 
 public partial class CloudSyncWindow : Window
 {
-    public CloudSyncWindow(AppSettings settings)
+    public CloudSyncWindow()
     {
         InitializeComponent();
-        DataContext = new CloudSyncViewModel(settings);
+        WindowChrome.DragBy(this, TitleBar);
     }
 
-    private void OnClose(object sender, RoutedEventArgs e) => Close();
+    public CloudSyncWindow(AppSettings settings) : this() => DataContext = new CloudSyncViewModel(settings);
+
+    private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

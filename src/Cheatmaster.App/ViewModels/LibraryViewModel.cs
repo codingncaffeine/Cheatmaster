@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
-using System.Windows;
-using System.Windows.Media.Imaging;
-using System.Windows.Threading;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Cheatmaster.App.Infrastructure;
+using Cheatmaster.App.Services;
 using Cheatmaster.Core.Cheats;
 
 namespace Cheatmaster.App.ViewModels;
@@ -83,12 +83,28 @@ public sealed class LibraryGroupRow : ObservableObject
 /// <summary>One saved game as it appears in the library grid.</summary>
 public sealed class LibraryGameRow : ObservableObject
 {
-    private BitmapImage? _cover;
+    private Bitmap? _cover;
+    private int _coverVersion;
 
     public LibraryGameRow(LibraryEntry entry)
     {
         Entry = entry;
-        _cover = ImageLoader.Load(entry.ArtPath, 300);
+        LoadCover(entry.ArtPath);
+    }
+
+    /// <summary>Decodes the cover on a worker; the newest request wins if several overlap.</summary>
+    private void LoadCover(string? path)
+    {
+        int version = ++_coverVersion;
+        _ = Task.Run(() =>
+        {
+            var bitmap = ImageLoader.Load(path, 300);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (version == _coverVersion) Cover = bitmap;
+                else bitmap?.Dispose();
+            });
+        });
     }
 
     public LibraryEntry Entry { get; private set; }
@@ -134,7 +150,7 @@ public sealed class LibraryGameRow : ObservableObject
         return string.Empty;
     }
 
-    public BitmapImage? Cover
+    public Bitmap? Cover
     {
         get => _cover;
         private set
@@ -182,7 +198,7 @@ public sealed class LibraryGameRow : ObservableObject
     public void Update(LibraryEntry entry)
     {
         Entry = entry;
-        Cover = ImageLoader.Load(entry.ArtPath, 300);
+        LoadCover(entry.ArtPath);
         Raise(nameof(Name));
         Raise(nameof(Subtitle));
         Raise(nameof(Description));
@@ -205,7 +221,6 @@ public sealed class LibraryViewModel : ObservableObject
     private readonly CheatLibrary _library;
     private readonly GameMetadataService _metadata = new(null, Services.CoverOptimizer.Shrink);
     private readonly List<LibraryGameRow> _all = [];
-    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
 
     private LibraryGameRow? _selected;
     private string _searchText = string.Empty;
@@ -302,13 +317,13 @@ public sealed class LibraryViewModel : ObservableObject
     }
 
     /// <summary>Set from the view, so the library can ask for a value without owning a window.</summary>
-    public Func<string, string, string, string?>? PromptForValue { get; set; }
+    public Func<string, string, string, Task<string?>>? PromptForValue { get; set; }
 
-    private void RenameGroup(object? parameter)
+    private async void RenameGroup(object? parameter)
     {
-        if (parameter is not LibraryGroupRow group || Selected is null) return;
+        if (parameter is not LibraryGroupRow group || Selected is null || PromptForValue is not { } prompt) return;
 
-        string? name = PromptForValue?.Invoke("Rename cheat", "What should this be called?", group.DisplayName);
+        string? name = await prompt("Rename cheat", "What should this be called?", group.DisplayName);
         if (name is null) return;
 
         name = name.Trim();
@@ -325,12 +340,12 @@ public sealed class LibraryViewModel : ObservableObject
     /// Sets the value a group is held at. This works with the game closed: the value is stored
     /// with the cheat and applied the next time it is attached and frozen.
     /// </summary>
-    private void SetGroupValue(object? parameter)
+    private async void SetGroupValue(object? parameter)
     {
-        if (parameter is not LibraryGroupRow group || Selected is null) return;
+        if (parameter is not LibraryGroupRow group || Selected is null || PromptForValue is not { } prompt) return;
 
         string initial = group.HeldValue.Length > 0 ? group.HeldValue : "0";
-        string? value = PromptForValue?.Invoke(
+        string? value = await prompt(
             "Hold at value",
             $"Hold all {group.Count} address{(group.Count == 1 ? "" : "es")} in \"{group.DisplayName}\" at:",
             initial);
@@ -557,8 +572,8 @@ public sealed class LibraryViewModel : ObservableObject
 
     private void Post(Action action)
     {
-        if (_dispatcher.CheckAccess()) action();
-        else _dispatcher.BeginInvoke(action);
+        if (Dispatcher.UIThread.CheckAccess()) action();
+        else Dispatcher.UIThread.Post(action);
     }
 
 
@@ -580,14 +595,15 @@ public sealed class LibraryViewModel : ObservableObject
 
     public void Open(LibraryGameRow row) => OpenRequested?.Invoke(row);
 
-    private void DeleteSelected()
+    private async void DeleteSelected()
     {
         if (Selected is null) return;
 
-        var answer = MessageBox.Show(
-            $"Delete the saved cheats for {Selected.Name}?\n\nThis removes {Selected.Entry.CheatSummary} and cannot be undone.",
-            "Cheatmaster", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (answer != MessageBoxResult.Yes) return;
+        if (!await Dialogs.ConfirmAsync(
+                $"Delete the saved cheats for {Selected.Name}?\n\nThis removes {Selected.Entry.CheatSummary} and cannot be undone.",
+                warning: true))
+            return;
+        if (Selected is null) return;
 
         string key = Selected.Key;
         _library.Delete(key);
@@ -596,22 +612,18 @@ public sealed class LibraryViewModel : ObservableObject
         Status = "Deleted.";
     }
 
-    private void ExportSelected()
+    private async void ExportSelected()
     {
-        if (Selected is null) return;
+        if (Selected is not { } selected) return;
 
-        var dialog = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "Export cheat table",
-            Filter = "Cheatmaster table (*.cmt)|*.cmt",
-            FileName = Selected.Name + CheatTable.FileExtension
-        };
-        if (dialog.ShowDialog() != true) return;
+        string? fileName = await Dialogs.SaveFileAsync("Export cheat table", selected.Name + CheatTable.FileExtension,
+            new FileKind("Cheatmaster table", "*.cmt"));
+        if (fileName is null) return;
 
         try
         {
-            File.Copy(Selected.Entry.Path, dialog.FileName, overwrite: true);
-            Status = "Exported to " + Path.GetFileName(dialog.FileName);
+            File.Copy(selected.Entry.Path, fileName, overwrite: true);
+            Status = "Exported to " + Path.GetFileName(fileName);
         }
         catch (Exception ex)
         {
@@ -619,34 +631,26 @@ public sealed class LibraryViewModel : ObservableObject
         }
     }
 
-    private void RevealSelected()
+    private async void RevealSelected()
     {
         if (Selected is null) return;
-        try
-        {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{Selected.Entry.Path}\"") { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Status = "Could not open the folder: " + ex.Message;
-        }
+        string? problem = await Dialogs.RevealAsync(Selected.Entry.Path);
+        if (problem is not null) Status = "Could not open the folder: " + problem;
     }
 
-    private void SetCoverForSelected()
+    private async void SetCoverForSelected()
     {
         if (Selected is null) return;
 
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Choose a cover image",
-            Filter = "Images (*.jpg;*.jpeg;*.png;*.webp)|*.jpg;*.jpeg;*.png;*.webp|All files (*.*)|*.*"
-        };
-        if (dialog.ShowDialog() != true) return;
+        string? fileName = await Dialogs.OpenFileAsync("Choose a cover image",
+            new FileKind("Images", "*.jpg", "*.jpeg", "*.png", "*.webp", "*.JPG", "*.JPEG", "*.PNG", "*.WEBP"),
+            new FileKind("All files", "*"));
+        if (fileName is null || Selected is null) return;
 
         try
         {
             string destination = _metadata.ArtPathFor(Selected.Key);
-            File.Copy(dialog.FileName, destination, overwrite: true);
+            File.Copy(fileName, destination, overwrite: true);
 
             var table = CheatTable.Load(Selected.Entry.Path);
             if (table is not null)

@@ -1,9 +1,8 @@
 using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Interop;
-using System.Windows.Media;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Cheatmaster.App.Services;
 using Cheatmaster.App.ViewModels;
 using Cheatmaster.App.Views;
@@ -13,11 +12,11 @@ namespace Cheatmaster.App;
 
 public partial class MainWindow : Window
 {
-    private const double EstimatedRowHeight = 26;
-
     private readonly MainViewModel _viewModel = new();
     private readonly HotkeyService _hotkeys = new();
-    private ScrollViewer? _resultsScroll;
+
+    /// <summary>Result rows the grid currently has on screen, by index.</summary>
+    private readonly HashSet<int> _loadedRows = [];
 
     /// <summary>Exposed so startup diagnostics can report through the same notice bar the user reads.</summary>
     public MainViewModel ViewModel => _viewModel;
@@ -26,12 +25,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _viewModel;
+        Dialogs.Owner = this;
+        WindowChrome.DragBy(this, TitleBar, maximizeOnDoubleClick: true);
 
         Width = _viewModel.Settings.WindowWidth;
         Height = _viewModel.Settings.WindowHeight;
         if (_viewModel.Settings.WindowMaximized) WindowState = WindowState.Maximized;
-
-        ChromeSupport.Apply(this);
 
         _viewModel.AttachRequested += ShowProcessPicker;
         _viewModel.CheatSetChanged += SyncHotkeys;
@@ -41,33 +40,31 @@ public partial class MainWindow : Window
         _viewModel.PromptForValue = (title, message, initial) =>
             ValuePromptWindow.Ask(this, title, message, initial,
                 "Accepts decimals and hex (0x1F). Each entry is written using its own storage type.");
-        _viewModel.ShowImportReport = report => ImportReportWindow.Show(this, report);
+        _viewModel.ShowImportReport = report => _ = ImportReportWindow.Show(this, report);
         _hotkeys.Pressed += OnHotkeyPressed;
 
-        SourceInitialized += (_, _) =>
+        // Only the rows on screen get re-read on the refresh tick, so a scan that returned a
+        // million addresses still costs nothing to keep live.
+        ResultsGrid.ContainerPrepared += (_, e) =>
         {
-            if (PresentationSource.FromVisual(this) is HwndSource source)
-            {
-                _hotkeys.Attach(source);
-                SyncHotkeys();
-            }
+            _loadedRows.Add(e.Index);
+            ReportVisibleRange();
+        };
+        ResultsGrid.ContainerClearing += (_, e) =>
+        {
+            if (e.Container.DataContext is ResultRow row) _loadedRows.Remove(row.Index);
+            ReportVisibleRange();
         };
 
-        Loaded += (_, _) =>
-        {
-            ValueBox.Focus();
-            HookResultsScroll();
+        // Selecting every row would realise a view model per hit, which is exactly what the lazy
+        // result list exists to avoid.
+        ResultsGrid.AddHandler(KeyDownEvent, OnResultsKeyDown, RoutingStrategies.Tunnel);
 
-            // Selecting every row would realise a view model per hit, which is exactly what the
-            // lazy result list exists to avoid.
-            ResultsGrid.CommandBindings.Add(new CommandBinding(ApplicationCommands.SelectAll, OnSelectAllResults));
+        CheatsGrid.BeginningEdit += (_, _) => _viewModel.IsEditingCell = true;
+        CheatsGrid.CellEditEnded += (_, _) => _viewModel.IsEditingCell = false;
+        CheatsGrid.RowEditEnded += (_, _) => _viewModel.IsEditingCell = false;
 
-            CheatsGrid.BeginningEdit += (_, _) => _viewModel.IsEditingCell = true;
-            CheatsGrid.CellEditEnding += (_, _) => _viewModel.IsEditingCell = false;
-            CheatsGrid.RowEditEnding += (_, _) => _viewModel.IsEditingCell = false;
-
-            StartBackgroundBackup();
-        };
+        Opened += OnFirstOpened;
 
         Closing += (_, _) =>
         {
@@ -82,20 +79,29 @@ public partial class MainWindow : Window
         };
     }
 
+    /// <summary>Opened fires again whenever a hidden window is shown, so the start-up work unhooks itself.</summary>
+    private void OnFirstOpened(object? sender, EventArgs e)
+    {
+        Opened -= OnFirstOpened;
+        ValueBox.Focus();
+        SyncHotkeys();
+        StartBackgroundBackup();
+    }
+
     // ---------------------------------------------------------------- chrome
 
-    private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void OnMinimize(object? sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
-    private void OnMaximize(object sender, RoutedEventArgs e) =>
+    private void OnMaximize(object? sender, RoutedEventArgs e) =>
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-    private void OnClose(object sender, RoutedEventArgs e) => Close();
+    private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
-    private void OnDismissNotice(object sender, RoutedEventArgs e) => _viewModel.ClearNotice();
+    private void OnDismissNotice(object? sender, RoutedEventArgs e) => _viewModel.ClearNotice();
 
     // ---------------------------------------------------------------- interaction
 
-    private void OnValueKeyDown(object sender, KeyEventArgs e)
+    private void OnValueKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
         if (_viewModel.ScanCommand.CanExecute(null)) _viewModel.ScanCommand.Execute(null);
@@ -103,7 +109,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Enter in the guide's value box does what its button does, so the game stays in focus.</summary>
-    private void OnGuideValueKeyDown(object sender, KeyEventArgs e)
+    private void OnGuideValueKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
         if (_viewModel.Guide.PrimaryCommand.CanExecute(null)) _viewModel.Guide.PrimaryCommand.Execute(null);
@@ -120,7 +126,7 @@ public partial class MainWindow : Window
 
         var row = _viewModel.Cheats[^1];
         CheatsGrid.SelectedItem = row;
-        CheatsGrid.ScrollIntoView(row);
+        CheatsGrid.ScrollIntoView(row, null);
         OnFindPointerPath(this, new RoutedEventArgs());
     }
 
@@ -143,45 +149,58 @@ public partial class MainWindow : Window
                 _viewModel.Settings.LastSyncUtc = DateTimeOffset.UtcNow;
 
                 if (outcome.Uploaded > 0 || outcome.Downloaded > 0)
-                    _ = Dispatcher.BeginInvoke(() => _viewModel.Notify("Cloud backup: " + outcome.Message, NoticeKind.Success));
+                    Dispatcher.UIThread.Post(() => _viewModel.Notify("Cloud backup: " + outcome.Message, NoticeKind.Success));
             }
             catch (Exception ex)
             {
-                _ = Dispatcher.BeginInvoke(() => _viewModel.Notify("Cloud backup skipped: " + ex.Message, NoticeKind.Info));
+                Dispatcher.UIThread.Post(() => _viewModel.Notify("Cloud backup skipped: " + ex.Message, NoticeKind.Info));
             }
         });
     }
 
-    public void ShowCloudBackup()
+    public void ShowCloudBackup() => _ = new CloudSyncWindow(_viewModel.Settings).ShowDialog(this);
+
+    private async void ShowProcessPicker()
     {
-        var window = new CloudSyncWindow(_viewModel.Settings) { Owner = this };
-        window.ShowDialog();
+        var picked = await new ProcessPickerWindow().ShowDialog<Core.Memory.ProcessCandidate?>(this);
+        if (picked is not null) _viewModel.Attach(picked);
     }
 
-    private void ShowProcessPicker()
-    {
-        var picker = new ProcessPickerWindow { Owner = this };
-        if (picker.ShowDialog() == true && picker.Selected is not null)
-            _viewModel.Attach(picker.Selected);
-    }
-
-    private void OnResultDoubleClick(object sender, MouseButtonEventArgs e)
+    private void OnResultDoubleClick(object? sender, TappedEventArgs e)
     {
         if (ResultsGrid.SelectedItem is ResultRow row) _viewModel.AddResult(row);
     }
 
-    private void OnCopyAddress(object sender, RoutedEventArgs e)
+    private void OnResultsKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.A && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            e.Handled = true;
+            SelectFirstResults();
+        }
+        else if (e.Key == Key.Enter && ResultsGrid.SelectedItems is { Count: > 0 })
+        {
+            e.Handled = true;
+            _viewModel.AddSelectedCommand.Execute(ResultsGrid.SelectedItems);
+        }
+    }
+
+    private async void OnCopyAddress(object? sender, RoutedEventArgs e)
     {
         var text = new StringBuilder();
-        foreach (object? item in ResultsGrid.SelectedItems)
+        foreach (object? item in ResultsGrid.Selection.SelectedItems)
         {
             if (item is ResultRow row) text.AppendLine(row.AddressText);
         }
+        await CopyAsync(text);
+    }
 
+    private async Task CopyAsync(StringBuilder text)
+    {
         if (text.Length == 0) return;
         try
         {
-            Clipboard.SetText(text.ToString().TrimEnd());
+            await Dialogs.CopyTextAsync(text.ToString().TrimEnd());
         }
         catch (Exception ex)
         {
@@ -193,7 +212,7 @@ public partial class MainWindow : Window
     /// Turns a session-only address into a route that survives a restart. Only meaningful while
     /// the game is running, because the route has to be traced through live memory.
     /// </summary>
-    private void OnFindPointerPath(object sender, RoutedEventArgs e)
+    private async void OnFindPointerPath(object? sender, RoutedEventArgs e)
     {
         if (_viewModel.Process is not { } process)
         {
@@ -214,18 +233,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new PointerScanWindow(process, address, row.Description, row.Entry.Type, bits) { Owner = this };
-        if (window.ShowDialog() == true && window.Chosen is { } path)
+        var window = new PointerScanWindow(process, address, row.Description, row.Entry.Type, bits);
+        if (await window.ChooseAsync(this) is { } path)
             _viewModel.ApplyPointerPath(row, path);
     }
 
-    private void OnSelectAllCheats(object sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
+    private void OnSelectAllCheats(object? sender, RoutedEventArgs e) => CheatsGrid.SelectAll();
 
     /// <summary>
     /// Opens the bytes around an address. This is where a value stops being one number and starts
     /// being a field of an object with everything else about that object sitting next to it.
     /// </summary>
-    private void ShowMemory(ulong address, string description)
+    private async void ShowMemory(ulong address, string description)
     {
         if (_viewModel.Process is not { } process)
         {
@@ -233,12 +252,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new MemoryViewWindow(process, address, description) { Owner = this };
+        var window = new MemoryViewWindow(process, address, description);
         window.AddRequested += (fieldAddress, type, label) => _viewModel.AddAddress(fieldAddress, type, label);
-        window.ShowDialog();
+        await window.ShowDialog(this);
     }
 
-    private void OnShowCheatInMemory(object sender, RoutedEventArgs e)
+    private void OnShowCheatInMemory(object? sender, RoutedEventArgs e)
     {
         if (_viewModel.Process is not { } process)
         {
@@ -262,7 +281,7 @@ public partial class MainWindow : Window
         ShowMemory(address, row.Description);
     }
 
-    private void OnShowResultInMemory(object sender, RoutedEventArgs e)
+    private void OnShowResultInMemory(object? sender, RoutedEventArgs e)
     {
         if (ResultsGrid.SelectedItem is not ResultRow row)
         {
@@ -278,7 +297,7 @@ public partial class MainWindow : Window
     /// scan cannot take: it says which of the candidate addresses the game actually uses, and
     /// usually names the object the value belongs to as well.
     /// </summary>
-    private void OnWatchCheat(object sender, RoutedEventArgs e)
+    private async void OnWatchCheat(object? sender, RoutedEventArgs e)
     {
         if (_viewModel.Process is not { } process)
         {
@@ -299,13 +318,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new AccessWatchWindow(process, address, row.Description, row.Entry.Type, bits) { Owner = this };
+        var window = new AccessWatchWindow(process, address, row.Description, row.Entry.Type, bits);
         window.AddRequested += _viewModel.AddAddress;
-        if (window.ShowDialog() == true && window.Chosen is { } path)
+        if (await window.ChooseAsync(this) is { } path)
             _viewModel.ApplyPointerPath(row, path);
     }
 
-    private void OnWatchResult(object sender, RoutedEventArgs e)
+    private async void OnWatchResult(object? sender, RoutedEventArgs e)
     {
         if (_viewModel.Process is not { } process)
         {
@@ -320,32 +339,23 @@ public partial class MainWindow : Window
         }
 
         var window = new AccessWatchWindow(process, row.Address, $"Address {row.AddressText}",
-            row.Interpretation.Type, row.CurrentValue) { Owner = this };
+            row.Interpretation.Type, row.CurrentValue);
         window.AddRequested += _viewModel.AddAddress;
 
         // A route traced from a result has nowhere to live yet, so the result becomes an entry
         // and the route goes straight onto it.
-        if (window.ShowDialog() == true && window.Chosen is { } path)
+        if (await window.ChooseAsync(this) is { } path)
             _viewModel.AddResultWithRoute(row, path);
     }
 
-    private void OnCopyCheatAddress(object sender, RoutedEventArgs e)
+    private async void OnCopyCheatAddress(object? sender, RoutedEventArgs e)
     {
         var text = new StringBuilder();
         foreach (object? item in CheatsGrid.SelectedItems)
         {
             if (item is CheatRow row) text.AppendLine(row.AddressText);
         }
-
-        if (text.Length == 0) return;
-        try
-        {
-            Clipboard.SetText(text.ToString().TrimEnd());
-        }
-        catch (Exception ex)
-        {
-            _viewModel.Notify("Could not copy: " + ex.Message, NoticeKind.Warning);
-        }
+        await CopyAsync(text);
     }
 
     private void OnHotkeyPressed(string combination)
@@ -361,7 +371,7 @@ public partial class MainWindow : Window
     /// Registers exactly the hotkeys the table asks for. Registration is system-wide, so a
     /// combination another application already owns is reported rather than failing quietly.
     /// </summary>
-    private void SyncHotkeys()
+    private async void SyncHotkeys()
     {
         var wanted = new List<string>();
         foreach (var row in _viewModel.Cheats)
@@ -369,56 +379,31 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(row.Hotkey)) wanted.Add(row.Hotkey);
         }
 
-        var failed = _hotkeys.Sync(wanted);
-        if (failed.Count > 0)
-            _viewModel.Notify("Another application already owns " + string.Join(", ", failed) + ".", NoticeKind.Warning);
+        var failed = await _hotkeys.SyncAsync(wanted);
+        if (failed.Count == 0) return;
+
+        _viewModel.Notify(_hotkeys.IsAvailable
+            ? "These hotkeys could not be registered — another application owns them, or the key is not recognised: " + string.Join(", ", failed) + "."
+            : "Global hotkeys need an X11 session or XWayland, which this desktop does not offer: " + string.Join(", ", failed) + ".",
+            NoticeKind.Warning);
     }
 
-    private void OnSelectAllResults(object sender, ExecutedRoutedEventArgs e)
+    private void SelectFirstResults()
     {
-        e.Handled = true;
         if (_viewModel.Results is not { Count: > 0 } results) return;
 
         const int Limit = 200;
-        ResultsGrid.SelectedItems.Clear();
         int take = Math.Min(Limit, results.Count);
-        for (int i = 0; i < take; i++) ResultsGrid.SelectedItems.Add(results[i]);
+        ResultsGrid.Selection.Clear();
+        ResultsGrid.Selection.SelectRange(0, take - 1);
 
         if (results.Count > take)
             _viewModel.Notify($"Selected the first {take:N0} of {results.Count:N0} results.", NoticeKind.Info);
     }
 
-    // ---------------------------------------------------------------- result virtualisation
-
-    /// <summary>
-    /// Only the rows on screen get re-read on the refresh tick, so a scan that returned a
-    /// million addresses still costs nothing to keep live.
-    /// </summary>
-    private void HookResultsScroll()
-    {
-        _resultsScroll = FindScrollViewer(ResultsGrid);
-        if (_resultsScroll is null) return;
-        _resultsScroll.ScrollChanged += (_, _) => ReportVisibleRange();
-        ReportVisibleRange();
-    }
-
     private void ReportVisibleRange()
     {
-        if (_resultsScroll is null) return;
-        int first = (int)(_resultsScroll.VerticalOffset / EstimatedRowHeight);
-        int count = (int)(_resultsScroll.ViewportHeight / EstimatedRowHeight) + 2;
-        _viewModel.SetVisibleRange(first, first + count);
-    }
-
-    private static ScrollViewer? FindScrollViewer(DependencyObject root)
-    {
-        if (root is ScrollViewer viewer) return viewer;
-        int count = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            var found = FindScrollViewer(VisualTreeHelper.GetChild(root, i));
-            if (found is not null) return found;
-        }
-        return null;
+        if (_loadedRows.Count == 0) return;
+        _viewModel.SetVisibleRange(_loadedRows.Min(), _loadedRows.Max());
     }
 }

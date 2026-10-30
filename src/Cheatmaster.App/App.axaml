@@ -1,20 +1,10 @@
-<Application x:Class="Cheatmaster.App.App"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:inf="clr-namespace:Cheatmaster.App.Infrastructure">
-    <Application.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Themes/Dark.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-
-            <inf:BoolToVisibility x:Key="BoolToVis" />
-            <inf:BoolToVisibility x:Key="BoolToVisInverted" Invert="True" />
-            <inf:NotEmptyToVisibility x:Key="NotEmptyToVis" />
-            <inf:NotEmptyToVisibility x:Key="EmptyToVis" Invert="True" />
-            <inf:InverseBool x:Key="InverseBool" />
-            <inf:ByteSize x:Key="ByteSize" />
-            <inf:CountFormat x:Key="CountFormat" />
-        </ResourceDictionary>
-    </Application.Resources>
+             x:Class="Cheatmaster.App.App"
+             RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <StyleInclude Source="/Themes/Dark.axaml" />
+    </Application.Styles>
 </Application>

@@ -1,760 +1,584 @@
-<Window x:Class="Cheatmaster.App.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        xmlns:vm="clr-namespace:Cheatmaster.App.ViewModels"
-        xmlns:views="clr-namespace:Cheatmaster.App.Views"
+        xmlns:vm="using:Cheatmaster.App.ViewModels"
+        xmlns:views="using:Cheatmaster.App.Views"
+        xmlns:inf="using:Cheatmaster.App.Infrastructure"
+        x:Class="Cheatmaster.App.MainWindow"
+        x:DataType="vm:MainViewModel"
         Title="Cheatmaster"
-        Icon="Assets/cheatmaster.ico"
+        Icon="/Assets/logo.png"
         Height="900" Width="1440" MinHeight="620" MinWidth="1080"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource AppBackgroundBrush}"
-        FontFamily="{StaticResource UiFont}"
-        FontSize="12.5"
-        Foreground="{StaticResource TextBrush}"
-        TextOptions.TextRenderingMode="ClearType"
-        TextOptions.TextFormattingMode="Ideal"
-        UseLayoutRounding="True"
-        WindowStyle="None"
-        AllowsTransparency="False">
+        WindowDecorations="None">
 
-    <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
-                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
-    </WindowChrome.WindowChrome>
+    <Window.KeyBindings>
+        <KeyBinding Gesture="F5" Command="{Binding ScanCommand}" />
+        <KeyBinding Gesture="Ctrl+N" Command="{Binding NewScanCommand}" />
+        <KeyBinding Gesture="Alt+Left" Command="{Binding UndoScanCommand}" />
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveTableCommand}" />
+        <KeyBinding Gesture="Ctrl+P" Command="{Binding AttachCommand}" />
+    </Window.KeyBindings>
 
-    <Window.InputBindings>
-        <KeyBinding Key="F5" Command="{Binding ScanCommand}" />
-        <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewScanCommand}" />
-        <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding UndoScanCommand}" />
-        <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveTableCommand}" />
-        <KeyBinding Key="P" Modifiers="Control" Command="{Binding AttachCommand}" />
-    </Window.InputBindings>
+    <Panel>
+        <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+            <Grid RowDefinitions="34,Auto,Auto,*,24">
 
-    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="34" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="24" />
-            </Grid.RowDefinitions>
+                <!-- ==================== title bar ==================== -->
+                <Grid Name="TitleBar" Grid.Row="0" Background="{StaticResource SurfaceBrush}" ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
+                        <Image Source="/Assets/logo.png" Width="18" Height="18"
+                               RenderOptions.BitmapInterpolationMode="HighQuality" />
+                        <TextBlock Text="Cheatmaster" Margin="8,0,0,0" FontWeight="SemiBold" FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding GameName}" Margin="12,0,0,0" FontSize="11.5"
+                                   Foreground="{StaticResource TextFaintBrush}" VerticalAlignment="Center"
+                                   IsVisible="{Binding GameName, Converter={x:Static inf:NotEmpty.Instance}}" />
+                    </StackPanel>
 
-            <!-- ==================== title bar ==================== -->
-            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Classes="caption" Click="OnMinimize" ToolTip.Tip="Minimise">
+                            <Path Classes="glyph" Data="{StaticResource IconMinimize}" />
+                        </Button>
+                        <Button Classes="caption" Click="OnMaximize" ToolTip.Tip="Maximise">
+                            <Path Classes="glyph" Data="{StaticResource IconMaximize}" />
+                        </Button>
+                        <Button Classes="caption close" Click="OnClose" ToolTip.Tip="Close">
+                            <Path Classes="glyph" Data="{StaticResource IconClose}" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
-                    <Image Source="Assets/logo.png" Width="18" Height="18" RenderOptions.BitmapScalingMode="HighQuality" />
-                    <TextBlock Text="Cheatmaster" Margin="8,0,0,0" FontWeight="SemiBold" FontSize="12"
-                               VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding GameName}" Margin="12,0,0,0" FontSize="11.5"
-                               Foreground="{StaticResource TextFaintBrush}" VerticalAlignment="Center"
-                               Visibility="{Binding GameName, Converter={StaticResource NotEmptyToVis}}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2" Orientation="Horizontal" shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimise" />
-                    <Button Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Maximise" />
-                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Close" />
-                </StackPanel>
-            </Grid>
-
-            <!-- ==================== target bar ==================== -->
-            <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="0,1,0,1" Padding="12,9">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0" Margin="0,0,12,0" CornerRadius="5" Padding="2"
-                            Background="#FF16171A" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <StackPanel Orientation="Horizontal">
-                            <ToggleButton Content="Scanner" Style="{StaticResource SegmentToggle}"
-                                          IsChecked="{Binding IsScannerView, Mode=OneWay}"
-                                          Command="{Binding ShowScannerCommand}" />
-                            <ToggleButton Content="Library" Style="{StaticResource SegmentToggle}"
-                                          IsChecked="{Binding IsLibraryView, Mode=OneWay}"
-                                          Command="{Binding ShowLibraryCommand}" />
-                        </StackPanel>
-                    </Border>
-
-                    <Button Grid.Column="1" Command="{Binding AttachCommand}" Padding="10,6" MinWidth="260"
-                            HorizontalContentAlignment="Left" ToolTip="Choose the process to work on  (Ctrl+P)">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="2,0,10,0">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="{StaticResource TextFaintBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsAttached}" Value="True">
-                                                <Setter Property="Fill" Value="{StaticResource SuccessBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
-                            <StackPanel>
-                                <TextBlock Text="{Binding ProcessTitle}" FontWeight="SemiBold" FontSize="12.5" />
-                                <TextBlock Text="{Binding ProcessSubtitle}" FontSize="11"
-                                           Foreground="{StaticResource TextFaintBrush}" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Button>
-
-                    <StackPanel Grid.Column="3" Orientation="Horizontal">
-                        <Border Background="#22D0574C" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1"
-                                CornerRadius="4" Padding="9,4" Margin="0,0,10,0" VerticalAlignment="Center"
-                                Visibility="{Binding ShowElevationHint, Converter={StaticResource BoolToVis}}">
+                <!-- ==================== target bar ==================== -->
+                <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,1,0,1" Padding="12,9">
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                        <Border Grid.Column="0" Margin="0,0,12,0" CornerRadius="5" Padding="2"
+                                Background="#FF16171A" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Not running as administrator" FontSize="11.5"
-                                           Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" />
-                                <Button Content="Restart elevated" Command="{Binding RestartElevatedCommand}"
-                                        Style="{StaticResource IconButton}" Margin="10,0,0,0" FontSize="11.5"
-                                        FontFamily="{StaticResource UiFont}"
-                                        Foreground="{StaticResource DangerBrush}" />
+                                <ToggleButton Content="Scanner" Classes="segment"
+                                              IsChecked="{Binding IsScannerView, Mode=OneWay}"
+                                              Command="{Binding ShowScannerCommand}" />
+                                <ToggleButton Content="Library" Classes="segment"
+                                              IsChecked="{Binding IsLibraryView, Mode=OneWay}"
+                                              Command="{Binding ShowLibraryCommand}" />
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="{Binding FreezeStatus}" VerticalAlignment="Center" Margin="0,0,12,0"
-                                   FontSize="11.5" Foreground="{StaticResource SuccessBrush}"
-                                   Visibility="{Binding FreezeStatus, Converter={StaticResource NotEmptyToVis}}" />
-
-                        <Button Content="Guide" Command="{Binding ShowGuideCommand}" Style="{StaticResource GhostButton}"
-                                Margin="0,0,8,0" ToolTip="Walk through a whole search, one step at a time" />
-                        <Button Content="Detach" Command="{Binding DetachCommand}" Style="{StaticResource GhostButton}" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- ==================== notice ==================== -->
-            <Border Grid.Row="2" Padding="14,7" BorderThickness="0,0,0,1"
-                    BorderBrush="{StaticResource BorderBrush}"
-                    Visibility="{Binding Notice, Converter={StaticResource NotEmptyToVis}}">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Background" Value="#1A4FA6E8" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding NoticeLevel}" Value="Success">
-                                <Setter Property="Background" Value="#1A5FA88E" />
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding NoticeLevel}" Value="Warning">
-                                <Setter Property="Background" Value="#1AE8A33D" />
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding NoticeLevel}" Value="Error">
-                                <Setter Property="Background" Value="#22D0574C" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Grid>
-                    <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" Margin="0,0,26,0" FontSize="12">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                <Setter Property="Foreground" Value="{StaticResource InfoBrush}" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding NoticeLevel}" Value="Success">
-                                        <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding NoticeLevel}" Value="Warning">
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding NoticeLevel}" Value="Error">
-                                        <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <Button Content="&#xE711;" Style="{StaticResource CaptionButton}" Width="24" Height="20"
-                            HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnDismissNotice" />
-                </Grid>
-            </Border>
-
-            <!-- ==================== body ==================== -->
-            <Grid Grid.Row="3" Visibility="{Binding IsScannerView, Converter={StaticResource BoolToVis}}">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="310" MinWidth="270" />
-                    <ColumnDefinition Width="5" />
-                    <ColumnDefinition Width="*" MinWidth="520" />
-                </Grid.ColumnDefinitions>
-
-                <!-- scan panel -->
-                <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
-                        Visibility="{Binding Guide.IsActive, Converter={StaticResource BoolToVisInverted}}">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,14,10,14">
-                        <StackPanel>
-                            <TextBlock Text="SEARCH FOR" Style="{StaticResource SectionLabel}" />
-
-                            <TextBox x:Name="ValueBox" Style="{StaticResource MonoTextBox}" FontSize="16"
-                                     Padding="10,8" Tag="{Binding ValuePlaceholder}"
-                                     Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                                     KeyDown="OnValueKeyDown"
-                                     IsEnabled="{Binding NeedsValue}" />
-
-                            <TextBox Style="{StaticResource MonoTextBox}" FontSize="14" Margin="0,7,0,0"
-                                     Padding="10,7" Tag="{Binding Value2Placeholder}"
-                                     Text="{Binding Value2Text, UpdateSourceTrigger=PropertyChanged}"
-                                     KeyDown="OnValueKeyDown"
-                                     Visibility="{Binding NeedsSecondValue, Converter={StaticResource BoolToVis}}" />
-
-                            <ComboBox Margin="0,7,0,0" ItemsSource="{Binding CompareOptions}"
-                                      SelectedItem="{Binding SelectedCompare}" DisplayMemberPath="Label" />
-
-                            <!-- Snapshot step, shown only for the searches that need one. -->
-                            <Border Margin="0,10,0,0" Padding="11,10" CornerRadius="5"
-                                    Background="#1A4FA6E8" BorderBrush="{StaticResource InfoBrush}" BorderThickness="1"
-                                    Visibility="{Binding NeedsSnapshot, Converter={StaticResource BoolToVis}}">
+                        <Button Grid.Column="1" Command="{Binding AttachCommand}" Padding="10,6" MinWidth="260"
+                                HorizontalContentAlignment="Left" ToolTip.Tip="Choose the process to work on  (Ctrl+P)">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="2,0,10,0"
+                                         Classes="status" Classes.on="{Binding IsAttached}" />
                                 <StackPanel>
-                                    <TextBlock TextWrapping="Wrap" FontSize="11" LineHeight="16"
-                                               Foreground="{StaticResource TextMutedBrush}"
-                                               Text="This search compares memory against a copy taken earlier. Capture now, change the value in the game, then scan." />
+                                    <TextBlock Text="{Binding ProcessTitle}" FontWeight="SemiBold" FontSize="12.5" />
+                                    <TextBlock Text="{Binding ProcessSubtitle}" FontSize="11"
+                                               Foreground="{StaticResource TextFaintBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
 
-                                    <Button Content="Capture memory now" Command="{Binding CaptureCommand}"
-                                            Margin="0,9,0,0" />
-
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
-                                                Visibility="{Binding HasSnapshot, Converter={StaticResource BoolToVis}}">
-                                        <TextBlock Text="{Binding SnapshotStatus}" FontSize="11"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{StaticResource SuccessBrush}" />
-                                        <Button Content="discard" Command="{Binding ClearSnapshotCommand}"
-                                                Margin="8,0,0,0" Style="{StaticResource IconButton}"
-                                                FontFamily="{StaticResource UiFont}" FontSize="11" />
-                                    </StackPanel>
+                        <StackPanel Grid.Column="3" Orientation="Horizontal">
+                            <Border Background="#22D0574C" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1"
+                                    CornerRadius="4" Padding="9,4" Margin="0,0,10,0" VerticalAlignment="Center"
+                                    IsVisible="{Binding ShowElevationHint}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding ElevationHintText}" FontSize="11.5"
+                                               Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" />
+                                    <Button Content="{Binding ElevationActionLabel}" Command="{Binding RestartElevatedCommand}"
+                                            Classes="icon" Margin="10,0,0,0" FontSize="11.5"
+                                            FontFamily="{StaticResource UiFont}"
+                                            Foreground="{StaticResource DangerBrush}"
+                                            ToolTip.Tip="{Binding ElevationActionTip}" />
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="STORED AS" Style="{StaticResource SectionLabel}" Margin="0,16,0,6" />
-                            <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding SelectedTypeOption}"
-                                      DisplayMemberPath="Label" />
-                            <TextBlock Margin="1,6,0,0" TextWrapping="Wrap" FontSize="11"
-                                       Foreground="{StaticResource TextFaintBrush}"
-                                       Visibility="{Binding IsAutoType, Converter={StaticResource BoolToVis}}"
-                                       Text="Every plausible encoding is tested at once — whole numbers, floats, percentages and scaled values — and the ones that match are reported below." />
+                            <TextBlock Text="{Binding FreezeStatus}" VerticalAlignment="Center" Margin="0,0,12,0"
+                                       FontSize="11.5" Foreground="{StaticResource SuccessBrush}"
+                                       IsVisible="{Binding FreezeStatus, Converter={x:Static inf:NotEmpty.Instance}}" />
 
-                            <Button Style="{StaticResource PrimaryButton}" Margin="0,16,0,0" Height="40"
-                                    FontSize="13.5" Content="{Binding ScanButtonLabel}"
-                                    Command="{Binding ScanCommand}"
-                                    ToolTip="Search memory  (F5)" />
-
-                            <Grid Margin="0,7,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="6" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Button Grid.Column="0" Content="Undo" Command="{Binding UndoScanCommand}"
-                                        ToolTip="Go back one scan  (Alt+Left)" />
-                                <Button Grid.Column="2" Content="New search" Command="{Binding NewScanCommand}"
-                                        ToolTip="Throw away these results  (Ctrl+N)" />
-                            </Grid>
-
-                            <StackPanel Margin="0,10,0,0"
-                                        Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}">
-                                <ProgressBar Value="{Binding ScanProgress, Mode=OneWay}" Maximum="100" />
-                                <TextBlock Text="{Binding ScanPhase}" FontSize="11" Margin="0,6,0,0"
-                                           Foreground="{StaticResource TextFaintBrush}" TextTrimming="CharacterEllipsis" />
-                                <Button Content="Cancel" Command="{Binding CancelScanCommand}" Margin="0,7,0,0"
-                                        Style="{StaticResource DangerButton}" />
-                            </StackPanel>
-
-                            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,10" />
-
-                            <Expander Header="Scan options">
-                                <StackPanel Margin="2,4,0,0">
-                                    <TextBlock Text="HOW HARD TO LOOK" Style="{StaticResource SectionLabel}" Margin="0,4,0,6" />
-                                    <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}">
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Label}" />
-                                                    <TextBlock Text="{Binding Detail}" FontSize="10.5"
-                                                               Foreground="{StaticResource TextFaintBrush}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
-
-                                    <TextBlock Text="DISPLAY ACCURACY" Style="{StaticResource SectionLabel}" Margin="0,14,0,6" />
-                                    <ComboBox ItemsSource="{Binding RoundingModes}" SelectedItem="{Binding SelectedRounding}">
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Label}" />
-                                                    <TextBlock Text="{Binding Detail}" FontSize="10.5"
-                                                               Foreground="{StaticResource TextFaintBrush}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
-
-                                    <TextBlock Text="ADDRESS STEP" Style="{StaticResource SectionLabel}" Margin="0,14,0,6" />
-                                    <ComboBox ItemsSource="{Binding Alignments}" SelectedItem="{Binding SelectedAlignment}"
-                                              ToolTip="4 is the usual compromise. 1 finds values packed at odd offsets, and is slower." />
-
-                                    <TextBlock Text="WHERE TO LOOK" Style="{StaticResource SectionLabel}" Margin="0,14,0,6" />
-                                    <CheckBox Content="Writable memory only" IsChecked="{Binding WritableOnly}" Margin="0,3" />
-                                    <CheckBox Content="Include module memory" IsChecked="{Binding IncludeImage}" Margin="0,3" />
-                                    <CheckBox Content="Include heap memory" IsChecked="{Binding IncludePrivate}" Margin="0,3" />
-                                    <CheckBox Content="Include mapped memory" IsChecked="{Binding IncludeMapped}" Margin="0,3"
-                                              ToolTip="Some engines keep game state in mapped views. Leaving this on is why a value another tool cannot see may turn up here." />
-
-                                    <TextBlock Text="BEHAVIOUR" Style="{StaticResource SectionLabel}" Margin="0,14,0,6" />
-                                    <CheckBox Content="Keep values live" IsChecked="{Binding LiveValues}" Margin="0,3" />
-                                </StackPanel>
-                            </Expander>
+                            <Button Content="Guide" Command="{Binding ShowGuideCommand}" Margin="0,0,8,0"
+                                    ToolTip.Tip="Walk through a whole search, one step at a time" />
+                            <Button Content="Detach" Command="{Binding DetachCommand}" />
                         </StackPanel>
-                    </ScrollViewer>
-                </Border>
-
-                <!-- guided walkthrough, in place of the scan panel until it is dismissed -->
-                <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
-                        Visibility="{Binding Guide.IsActive, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="14,14,10,14">
-                            <StackPanel>
-                                <TextBlock Text="GETTING STARTED" Style="{StaticResource SectionLabel}" />
-
-                                <TextBlock Text="{Binding Guide.Title}" FontSize="15.5" FontWeight="SemiBold"
-                                           TextWrapping="Wrap" Margin="0,10,0,0" />
-
-                                <TextBlock Text="{Binding Guide.Body}" TextWrapping="Wrap" LineHeight="19"
-                                           Margin="0,8,0,0" Foreground="{StaticResource TextMutedBrush}" />
-
-                                <TextBox Margin="0,14,0,0" Padding="10,8" FontSize="14"
-                                         Tag="health, money, ammo…"
-                                         Text="{Binding Guide.Subject, UpdateSourceTrigger=PropertyChanged}"
-                                         Visibility="{Binding Guide.ShowSubjectBox, Converter={StaticResource BoolToVis}}" />
-
-                                <TextBox Margin="0,14,0,0" Padding="10,8" FontSize="16"
-                                         Style="{StaticResource MonoTextBox}"
-                                         Tag="{Binding ValuePlaceholder}"
-                                         Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                                         KeyDown="OnGuideValueKeyDown"
-                                         Visibility="{Binding Guide.ShowValueBox, Converter={StaticResource BoolToVis}}" />
-
-                                <ItemsControl ItemsSource="{Binding Guide.Choices}" Margin="0,14,0,0">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Command="{Binding Command}" Margin="0,0,0,8" Padding="12,10"
-                                                    HorizontalContentAlignment="Left">
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Label}" FontSize="12.5" FontWeight="SemiBold"
-                                                               TextWrapping="Wrap"
-                                                               Foreground="{StaticResource TextBrush}" />
-                                                    <TextBlock Text="{Binding Hint}" FontSize="11" Margin="0,3,0,0"
-                                                               TextWrapping="Wrap"
-                                                               Foreground="{StaticResource TextFaintBrush}" />
-                                                </StackPanel>
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <Button Content="{Binding Guide.PrimaryLabel}" Command="{Binding Guide.PrimaryCommand}"
-                                        Style="{StaticResource PrimaryButton}" Margin="0,14,0,0" Padding="12,9"
-                                        Visibility="{Binding Guide.HasPrimary, Converter={StaticResource BoolToVis}}" />
-
-                                <ProgressBar Margin="0,12,0,0" Height="4" Maximum="100"
-                                             Value="{Binding ScanProgress, Mode=OneWay}"
-                                             Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
-
-                                <TextBlock Text="{Binding Guide.ProgressText}" Margin="0,12,0,0" FontSize="11.5"
-                                           TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
-                                           Visibility="{Binding Guide.ProgressText, Converter={StaticResource NotEmptyToVis}}" />
-                            </StackPanel>
-                        </ScrollViewer>
-
-                        <Border Grid.Row="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
-                                Padding="14,10">
-                            <Button Content="Skip the guide" Command="{Binding Guide.DismissCommand}"
-                                    Style="{StaticResource GhostButton}" HorizontalAlignment="Left"
-                                    ToolTip="Go back to the full search panel. The Guide button in the bar brings this back." />
-                        </Border>
                     </Grid>
                 </Border>
 
-                <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
-                              VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" />
+                <!-- ==================== notice ==================== -->
+                <Border Grid.Row="2" Padding="14,7" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}"
+                        Classes="notice"
+                        Classes.success="{Binding NoticeLevel, Converter={x:Static inf:EqualsConverter.Instance}, ConverterParameter={x:Static vm:NoticeKind.Success}}"
+                        Classes.warning="{Binding NoticeLevel, Converter={x:Static inf:EqualsConverter.Instance}, ConverterParameter={x:Static vm:NoticeKind.Warning}}"
+                        Classes.error="{Binding NoticeLevel, Converter={x:Static inf:EqualsConverter.Instance}, ConverterParameter={x:Static vm:NoticeKind.Error}}"
+                        IsVisible="{Binding Notice, Converter={x:Static inf:NotEmpty.Instance}}">
+                    <Grid>
+                        <SelectableTextBlock Text="{Binding Notice}" TextWrapping="Wrap" Margin="0,0,26,0" FontSize="12"
+                                             Classes="notice-text" />
+                        <Button Classes="caption" Width="24" Height="20" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Click="OnDismissNotice" ToolTip.Tip="Dismiss">
+                            <Path Classes="glyph" Data="{StaticResource IconClose}" Width="8" Height="8" Stretch="Uniform" />
+                        </Button>
+                    </Grid>
+                </Border>
 
-                <!-- results and table -->
-                <Grid Grid.Column="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" MinHeight="140" />
-                        <RowDefinition Height="5" />
-                        <RowDefinition Height="260" MinHeight="120" />
-                    </Grid.RowDefinitions>
+                <!-- ==================== body ==================== -->
+                <Grid Grid.Row="3" ColumnDefinitions="310,5,*" IsVisible="{Binding IsScannerView}">
 
-                    <!-- verdict -->
-                    <Border Grid.Row="0" Margin="12,12,12,0" Padding="14,11" Style="{StaticResource CardBorder}"
-                            Visibility="{Binding Verdict, Converter={StaticResource NotEmptyToVis}}">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding Verdict}" FontSize="14" FontWeight="SemiBold"
-                                           Foreground="{StaticResource AccentBrush}" />
-                                <TextBlock Text="{Binding ResultCountText}" Margin="12,0,0,0" VerticalAlignment="Center"
-                                           FontSize="11.5" Foreground="{StaticResource TextFaintBrush}" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding VerdictDetail}" TextWrapping="Wrap" Margin="0,5,0,0"
-                                       FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
-                        </StackPanel>
-                    </Border>
+                    <!-- scan panel -->
+                    <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" MinWidth="270"
+                            IsVisible="{Binding !Guide.IsActive}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,14,10,14">
+                            <StackPanel>
+                                <TextBlock Text="SEARCH FOR" Classes="section" />
 
-                    <!-- storage-theory chips -->
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Chips}" Margin="12,10,12,0">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Margin="0,0,7,7" CornerRadius="12" Padding="0"
-                                        Background="{StaticResource SurfaceRaisedBrush}"
-                                        BorderThickness="1" ToolTip="{Binding ToolTipText}">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsBest}" Value="True">
-                                                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                                                    <Setter Property="Background" Value="#1FE8A33D" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding IsPinned}" Value="True">
-                                                    <Setter Property="BorderBrush" Value="{StaticResource SuccessBrush}" />
-                                                    <Setter Property="Background" Value="#1F5FA88E" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Capped}" Value="True">
-                                                    <Setter Property="Opacity" Value="0.45" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <StackPanel Orientation="Horizontal" Margin="10,4,6,4">
-                                        <TextBlock Text="{Binding Label}" FontSize="11.5" VerticalAlignment="Center" />
-                                        <Border Background="#33000000" CornerRadius="7" Padding="6,1" Margin="8,0,0,0">
-                                            <TextBlock Text="{Binding CountText}" FontSize="10.5"
-                                                       FontFamily="{StaticResource MonoFont}"
-                                                       Foreground="{StaticResource TextMutedBrush}" />
-                                        </Border>
-                                        <Button Content="&#xE718;" Style="{StaticResource IconButton}" Margin="4,0,0,0"
-                                                FontFamily="{StaticResource IconFont}" FontSize="10" Padding="4,2"
-                                                ToolTip="Only consider this encoding from now on"
-                                                Command="{Binding DataContext.PinInterpretationCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}" />
-                                        <Button Content="&#xE8DE;" Style="{StaticResource IconButton}" FontSize="10"
-                                                FontFamily="{StaticResource IconFont}" Padding="4,2"
-                                                ToolTip="Throw away every other encoding right now"
-                                                Command="{Binding DataContext.KeepOnlyCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}" />
+                                <TextBox Name="ValueBox" Classes="mono" FontSize="16" Padding="10,8"
+                                         PlaceholderText="{Binding ValuePlaceholder}"
+                                         Text="{Binding ValueText}" KeyDown="OnValueKeyDown"
+                                         IsEnabled="{Binding NeedsValue}" />
+
+                                <TextBox Classes="mono" FontSize="14" Margin="0,7,0,0" Padding="10,7"
+                                         PlaceholderText="{Binding Value2Placeholder}"
+                                         Text="{Binding Value2Text}" KeyDown="OnValueKeyDown"
+                                         IsVisible="{Binding NeedsSecondValue}" />
+
+                                <ComboBox Margin="0,7,0,0" ItemsSource="{Binding CompareOptions}"
+                                          SelectedItem="{Binding SelectedCompare}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:CompareOption">
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+
+                                <!-- Snapshot step, shown only for the searches that need one. -->
+                                <Border Margin="0,10,0,0" Padding="11,10" CornerRadius="5"
+                                        Background="#1A4FA6E8" BorderBrush="{StaticResource InfoBrush}" BorderThickness="1"
+                                        IsVisible="{Binding NeedsSnapshot}">
+                                    <StackPanel>
+                                        <TextBlock TextWrapping="Wrap" FontSize="11" LineHeight="16"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   Text="This search compares memory against a copy taken earlier. Capture now, change the value in the game, then scan." />
+
+                                        <Button Content="Capture memory now" Command="{Binding CaptureCommand}"
+                                                Margin="0,9,0,0" HorizontalAlignment="Stretch" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0" IsVisible="{Binding HasSnapshot}">
+                                            <TextBlock Text="{Binding SnapshotStatus}" FontSize="11" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource SuccessBrush}" />
+                                            <Button Content="discard" Command="{Binding ClearSnapshotCommand}"
+                                                    Margin="8,0,0,0" Classes="icon"
+                                                    FontFamily="{StaticResource UiFont}" FontSize="11" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
 
-                    <!-- results -->
-                    <Border Grid.Row="2" Margin="12,10,12,0" Style="{StaticResource CardBorder}" ClipToBounds="True">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
+                                <TextBlock Text="STORED AS" Classes="section" Margin="0,16,0,6" />
+                                <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding SelectedTypeOption}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:TypeOption">
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <TextBlock Margin="1,6,0,0" TextWrapping="Wrap" FontSize="11"
+                                           Foreground="{StaticResource TextFaintBrush}" IsVisible="{Binding IsAutoType}"
+                                           Text="Every plausible encoding is tested at once — whole numbers, floats, percentages and scaled values — and the ones that match are reported below." />
 
-                            <Grid Grid.Row="0" Margin="12,9,10,7">
-                                <TextBlock Text="RESULTS" Style="{StaticResource SectionLabel}" Margin="0"
-                                           VerticalAlignment="Center" />
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="Add selected to table" Style="{StaticResource GhostButton}"
+                                <Button Classes="primary" Margin="0,16,0,0" Height="40" HorizontalAlignment="Stretch"
+                                        FontSize="13.5" Content="{Binding ScanButtonLabel}"
+                                        Command="{Binding ScanCommand}" ToolTip.Tip="Search memory  (F5)" />
+
+                                <Grid Margin="0,7,0,0" ColumnDefinitions="*,6,*">
+                                    <Button Grid.Column="0" Content="Undo" Command="{Binding UndoScanCommand}"
+                                            HorizontalAlignment="Stretch" ToolTip.Tip="Go back one scan  (Alt+Left)" />
+                                    <Button Grid.Column="2" Content="New search" Command="{Binding NewScanCommand}"
+                                            HorizontalAlignment="Stretch" ToolTip.Tip="Throw away these results  (Ctrl+N)" />
+                                </Grid>
+
+                                <StackPanel Margin="0,10,0,0" IsVisible="{Binding IsScanning}">
+                                    <ProgressBar Value="{Binding ScanProgress, Mode=OneWay}" Maximum="100" />
+                                    <TextBlock Text="{Binding ScanPhase}" FontSize="11" Margin="0,6,0,0"
+                                               Foreground="{StaticResource TextFaintBrush}" TextTrimming="CharacterEllipsis" />
+                                    <Button Content="Cancel" Command="{Binding CancelScanCommand}" Margin="0,7,0,0"
+                                            Classes="danger" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+
+                                <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,10" />
+
+                                <Expander Header="Scan options">
+                                    <StackPanel Margin="2,4,0,0">
+                                        <TextBlock Text="HOW HARD TO LOOK" Classes="section" Margin="0,4,0,6" />
+                                        <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ProfileOption">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                        <TextBlock Text="{Binding Detail}" FontSize="10.5"
+                                                                   Foreground="{StaticResource TextFaintBrush}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <TextBlock Text="DISPLAY ACCURACY" Classes="section" Margin="0,14,0,6" />
+                                        <ComboBox ItemsSource="{Binding RoundingModes}" SelectedItem="{Binding SelectedRounding}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:RoundingOption">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                        <TextBlock Text="{Binding Detail}" FontSize="10.5"
+                                                                   Foreground="{StaticResource TextFaintBrush}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <TextBlock Text="ADDRESS STEP" Classes="section" Margin="0,14,0,6" />
+                                        <ComboBox ItemsSource="{Binding Alignments}" SelectedItem="{Binding SelectedAlignment}"
+                                                  ToolTip.Tip="4 is the usual compromise. 1 finds values packed at odd offsets, and is slower." />
+
+                                        <TextBlock Text="WHERE TO LOOK" Classes="section" Margin="0,14,0,6" />
+                                        <CheckBox Content="Writable memory only" IsChecked="{Binding WritableOnly}" Margin="0,3" />
+                                        <CheckBox Content="Include module memory" IsChecked="{Binding IncludeImage}" Margin="0,3" />
+                                        <CheckBox Content="Include heap memory" IsChecked="{Binding IncludePrivate}" Margin="0,3" />
+                                        <CheckBox Content="Include mapped memory" IsChecked="{Binding IncludeMapped}" Margin="0,3"
+                                                  ToolTip.Tip="Some engines keep game state in mapped views. Leaving this on is why a value another tool cannot see may turn up here." />
+
+                                        <TextBlock Text="BEHAVIOUR" Classes="section" Margin="0,14,0,6" />
+                                        <CheckBox Content="Keep values live" IsChecked="{Binding LiveValues}" Margin="0,3" />
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- guided walkthrough, in place of the scan panel until it is dismissed -->
+                    <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" IsVisible="{Binding Guide.IsActive}">
+                        <Grid RowDefinitions="*,Auto">
+                            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="14,14,10,14">
+                                <StackPanel>
+                                    <TextBlock Text="GETTING STARTED" Classes="section" />
+
+                                    <TextBlock Text="{Binding Guide.Title}" FontSize="15.5" FontWeight="SemiBold"
+                                               TextWrapping="Wrap" Margin="0,10,0,0" />
+
+                                    <TextBlock Text="{Binding Guide.Body}" TextWrapping="Wrap" LineHeight="19"
+                                               Margin="0,8,0,0" Foreground="{StaticResource TextMutedBrush}" />
+
+                                    <TextBox Margin="0,14,0,0" Padding="10,8" FontSize="14"
+                                             PlaceholderText="health, money, ammo…"
+                                             Text="{Binding Guide.Subject}"
+                                             IsVisible="{Binding Guide.ShowSubjectBox}" />
+
+                                    <TextBox Margin="0,14,0,0" Padding="10,8" FontSize="16" Classes="mono"
+                                             PlaceholderText="{Binding ValuePlaceholder}"
+                                             Text="{Binding ValueText}" KeyDown="OnGuideValueKeyDown"
+                                             IsVisible="{Binding Guide.ShowValueBox}" />
+
+                                    <ItemsControl ItemsSource="{Binding Guide.Choices}" Margin="0,14,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:GuideChoice">
+                                                <Button Command="{Binding Command}" Margin="0,0,0,8" Padding="12,10"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Label}" FontSize="12.5" FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap" Foreground="{StaticResource TextBrush}" />
+                                                        <TextBlock Text="{Binding Hint}" FontSize="11" Margin="0,3,0,0"
+                                                                   TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Button Content="{Binding Guide.PrimaryLabel}" Command="{Binding Guide.PrimaryCommand}"
+                                            Classes="primary" Margin="0,14,0,0" Padding="12,9" HorizontalAlignment="Stretch"
+                                            IsVisible="{Binding Guide.HasPrimary}" />
+
+                                    <ProgressBar Margin="0,12,0,0" Maximum="100" Value="{Binding ScanProgress, Mode=OneWay}"
+                                                 IsVisible="{Binding IsScanning}" />
+
+                                    <TextBlock Text="{Binding Guide.ProgressText}" Margin="0,12,0,0" FontSize="11.5"
+                                               TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                               IsVisible="{Binding Guide.ProgressText, Converter={x:Static inf:NotEmpty.Instance}}" />
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <Border Grid.Row="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="14,10">
+                                <Button Content="Skip the guide" Command="{Binding Guide.DismissCommand}" HorizontalAlignment="Left"
+                                        ToolTip.Tip="Go back to the full search panel. The Guide button in the bar brings this back." />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+
+                    <!-- results and table -->
+                    <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,5,260" MinWidth="520">
+
+                        <!-- verdict -->
+                        <Border Grid.Row="0" Margin="12,12,12,0" Padding="14,11" Classes="card"
+                                IsVisible="{Binding Verdict, Converter={x:Static inf:NotEmpty.Instance}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Verdict}" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Text="{Binding ResultCountText}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                               FontSize="11.5" Foreground="{StaticResource TextFaintBrush}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding VerdictDetail}" TextWrapping="Wrap" Margin="0,5,0,0"
+                                           FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- storage-theory chips -->
+                        <ItemsControl Grid.Row="1" ItemsSource="{Binding Chips}" Margin="12,10,12,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:InterpretationChip">
+                                    <Border Margin="0,0,7,7" CornerRadius="12" BorderThickness="1"
+                                            ToolTip.Tip="{Binding ToolTipText}"
+                                            Classes="chip" Classes.best="{Binding IsBest}"
+                                            Classes.pinned="{Binding IsPinned}" Classes.capped="{Binding Capped}">
+                                        <StackPanel Orientation="Horizontal" Margin="10,4,6,4">
+                                            <TextBlock Text="{Binding Label}" FontSize="11.5" VerticalAlignment="Center" />
+                                            <Border Background="#33000000" CornerRadius="7" Padding="6,1" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding CountText}" FontSize="10.5"
+                                                           FontFamily="{StaticResource MonoFont}"
+                                                           Foreground="{StaticResource TextMutedBrush}" />
+                                            </Border>
+                                            <Button Classes="icon" Margin="4,0,0,0" Padding="4,2" MinHeight="20" MinWidth="20"
+                                                    ToolTip.Tip="Only consider this encoding from now on"
+                                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).PinInterpretationCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Path Classes="glyph" Data="{StaticResource IconPin}" />
+                                            </Button>
+                                            <Button Classes="icon" Padding="4,2" MinHeight="20" MinWidth="20"
+                                                    ToolTip.Tip="Throw away every other encoding right now"
+                                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).KeepOnlyCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Path Classes="glyph" Data="{StaticResource IconFilter}" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- results -->
+                        <Border Grid.Row="2" Margin="12,10,12,0" Classes="card" ClipToBounds="True" MinHeight="140">
+                            <Grid RowDefinitions="Auto,*">
+                                <Grid Grid.Row="0" Margin="12,9,10,7">
+                                    <TextBlock Text="RESULTS" Classes="section" Margin="0" VerticalAlignment="Center" />
+                                    <Button Content="Add selected to table" HorizontalAlignment="Right"
                                             Padding="10,4" MinHeight="26" FontSize="11.5"
                                             Command="{Binding AddSelectedCommand}"
-                                            CommandParameter="{Binding SelectedItems, ElementName=ResultsGrid}" />
-                                </StackPanel>
-                            </Grid>
+                                            CommandParameter="{Binding #ResultsGrid.SelectedItems}" />
+                                </Grid>
 
-                            <DataGrid x:Name="ResultsGrid" Grid.Row="1" ItemsSource="{Binding Results}"
-                                      SelectionMode="Extended" CanUserSortColumns="False" IsReadOnly="True"
-                                      MouseDoubleClick="OnResultDoubleClick">
-                                <DataGrid.ContextMenu>
-                                    <!-- A context menu has its own name scope, so ElementName cannot
-                                         reach the grid. PlacementTarget is the way back to it. -->
-                                    <ContextMenu DataContext="{Binding PlacementTarget, RelativeSource={RelativeSource Self}}">
-                                        <MenuItem Header="Add to cheat table" InputGestureText="Double-click"
-                                                  Command="{Binding DataContext.AddSelectedCommand}"
-                                                  CommandParameter="{Binding SelectedItems}" />
-                                        <Separator />
-                                        <MenuItem Header="See what touches this…" Click="OnWatchResult"
-                                                  ToolTip="Wait for the game to touch this address, and see which code did" />
-                                        <MenuItem Header="Show in memory…" Click="OnShowResultInMemory"
-                                                  ToolTip="Look at the bytes around this address, and what else is in the same object" />
-                                        <Separator />
-                                        <MenuItem Header="Copy address" Click="OnCopyAddress" />
-                                    </ContextMenu>
-                                </DataGrid.ContextMenu>
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Address" Width="150" Binding="{Binding AddressText, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
-                                                <Setter Property="Margin" Value="12,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Value now" Width="130" Binding="{Binding ValueText, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Changed}" Value="True">
-                                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="When found" Width="130" Binding="{Binding FoundText, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Stored as" Width="*" Binding="{Binding TypeLabel, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                </DataGrid.Columns>
-                            </DataGrid>
-
-                            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                        Visibility="{Binding HasResults, Converter={StaticResource BoolToVisInverted}}">
-                                <TextBlock Text="No results yet" HorizontalAlignment="Center" FontSize="13"
-                                           Foreground="{StaticResource TextFaintBrush}" />
-                                <TextBlock HorizontalAlignment="Center" Margin="0,6,0,0" FontSize="11.5" MaxWidth="420"
-                                           TextAlignment="Center" TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextFaintBrush}"
-                                           Text="Type a number you can see in the game and press First scan. You do not need to know how the game stores it." />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                  ResizeBehavior="PreviousAndNext" />
-
-                    <!-- cheat table -->
-                    <Border Grid.Row="4" Margin="12,0,12,12" Style="{StaticResource CardBorder}" ClipToBounds="True">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <Grid Grid.Row="0" Margin="12,9,10,7">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="CHEAT TABLE" Style="{StaticResource SectionLabel}" Margin="0" />
-                                    <TextBlock Text="{Binding GameName}" Margin="10,0,0,0" FontSize="11"
-                                               Foreground="{StaticResource TextFaintBrush}" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <CheckBox Content="Freeze all" IsChecked="{Binding FreezeAll}"
-                                              VerticalAlignment="Center" Margin="0,0,14,0"
-                                              ToolTip="Hold every value in this table where it is" />
-                                    <Button Content="Re-check routes" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
-                                            Command="{Binding RecheckRoutesCommand}"
-                                            Visibility="{Binding HasRoutes, Converter={StaticResource BoolToVis}}"
-                                            ToolTip="Follow every saved route again. A route only proves itself after the game has restarted." />
-                                    <Button Content="Set value…" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
-                                            Command="{Binding SetValueCommand}"
-                                            CommandParameter="{Binding SelectedItems, ElementName=CheatsGrid}"
-                                            ToolTip="Write one value into every selected entry" />
-                                    <Button Content="Freeze" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
-                                            Command="{Binding FreezeSelectedCommand}"
-                                            CommandParameter="{Binding SelectedItems, ElementName=CheatsGrid}"
-                                            ToolTip="Hold the selected values where they are" />
-                                    <Button Content="Remove" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
-                                            Command="{Binding RemoveCheatCommand}"
-                                            CommandParameter="{Binding SelectedItems, ElementName=CheatsGrid}" />
-                                    <Button Content="Save" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
-                                            Command="{Binding SaveTableCommand}"
-                                            ToolTip="Save this game's cheats to your library  (Ctrl+S)" />
-                                    <Button Content="Export" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5" Margin="0,0,6,0"
-                                            Command="{Binding ExportTableCommand}" />
-                                    <Button Content="Import" Style="{StaticResource GhostButton}" Padding="10,4"
-                                            MinHeight="26" FontSize="11.5"
-                                            Command="{Binding ImportTableCommand}" />
-                                </StackPanel>
-                            </Grid>
-
-                            <DataGrid x:Name="CheatsGrid" Grid.Row="1" ItemsSource="{Binding Cheats}"
-                                      SelectionMode="Extended" CanUserSortColumns="False" IsReadOnly="False">
-                                <DataGrid.ContextMenu>
-                                    <!-- PlacementTarget, because a context menu cannot see ElementName. -->
-                                    <ContextMenu DataContext="{Binding PlacementTarget, RelativeSource={RelativeSource Self}}">
-                                        <MenuItem Header="Set value…"
-                                                  Command="{Binding DataContext.SetValueCommand}"
-                                                  CommandParameter="{Binding SelectedItems}" />
-                                        <MenuItem Header="Freeze at value…"
-                                                  Command="{Binding DataContext.FreezeAtValueCommand}"
-                                                  CommandParameter="{Binding SelectedItems}" />
-                                        <MenuItem Header="See what touches this…" Click="OnWatchCheat"
-                                                  ToolTip="Wait for the game to touch this address, and see which code did" />
-                                        <MenuItem Header="Show in memory…" Click="OnShowCheatInMemory"
-                                                  ToolTip="Look at the bytes around this address, and what else is in the same object" />
-                                        <MenuItem Header="Find a stable address…" Click="OnFindPointerPath"
-                                                  ToolTip="Trace a route that still finds this value after a restart" />
-                                        <Separator />
-                                        <MenuItem Header="Name this cheat…"
-                                                  Command="{Binding DataContext.GroupSelectedCommand}"
-                                                  CommandParameter="{Binding SelectedItems}" />
-                                        <MenuItem Header="Freeze / release"
-                                                  Command="{Binding DataContext.FreezeSelectedCommand}"
-                                                  CommandParameter="{Binding SelectedItems}" />
-                                        <Separator />
-                                        <MenuItem Header="Select all" InputGestureText="Ctrl+A" Click="OnSelectAllCheats" />
-                                        <MenuItem Header="Copy address" Click="OnCopyCheatAddress" />
-                                        <Separator />
-                                        <MenuItem Header="Remove"
-                                                  Command="{Binding DataContext.RemoveCheatCommand}"
-                                                  CommandParameter="{Binding SelectedItems}" />
-                                    </ContextMenu>
-                                </DataGrid.ContextMenu>
-                                <DataGrid.Columns>
-                                    <DataGridTemplateColumn Header="Freeze" Width="62" IsReadOnly="True">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <CheckBox IsChecked="{Binding Frozen, UpdateSourceTrigger=PropertyChanged}"
-                                                          HorizontalAlignment="Center" Margin="0"
-                                                          ToolTip="Keep rewriting this value" />
+                                <!-- A list rather than a data grid: a grid copies its whole source up front, and a first
+                                     scan can return a million addresses. This one only builds the rows on screen. -->
+                                <Grid Grid.Row="1" RowDefinitions="30,*">
+                                    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}"
+                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,1">
+                                        <Grid ColumnDefinitions="150,130,130,*" Classes="results-header">
+                                            <TextBlock Grid.Column="0" Text="Address" Margin="12,0,0,0" />
+                                            <TextBlock Grid.Column="1" Text="Value now" Margin="10,0,0,0" />
+                                            <TextBlock Grid.Column="2" Text="When found" Margin="10,0,0,0" />
+                                            <TextBlock Grid.Column="3" Text="Stored as" Margin="10,0,0,0" />
+                                        </Grid>
+                                    </Border>
+                                    <ListBox Name="ResultsGrid" Grid.Row="1" Classes="results" ItemsSource="{Binding Results}"
+                                             SelectionMode="Multiple" DoubleTapped="OnResultDoubleClick">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Add to cheat table" InputGesture="Enter"
+                                                          Command="{Binding AddSelectedCommand}"
+                                                          CommandParameter="{Binding #ResultsGrid.SelectedItems}" />
+                                                <Separator />
+                                                <MenuItem Header="See what touches this…" Click="OnWatchResult"
+                                                          ToolTip.Tip="Wait for the game to touch this address, and see which code did" />
+                                                <MenuItem Header="Show in memory…" Click="OnShowResultInMemory"
+                                                          ToolTip.Tip="Look at the bytes around this address, and what else is in the same object" />
+                                                <Separator />
+                                                <MenuItem Header="Copy address" Click="OnCopyAddress" />
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ResultRow">
+                                                <Grid ColumnDefinitions="150,130,130,*" Height="26">
+                                                    <TextBlock Grid.Column="0" Text="{Binding AddressText}" Classes="mono" Margin="12,0,0,0"
+                                                               VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding ValueText}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                               Classes="mono live" Classes.changed="{Binding Changed}" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding FoundText}" Classes="mono" Margin="10,0,0,0"
+                                                               VerticalAlignment="Center" Foreground="{StaticResource TextFaintBrush}" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding TypeLabel}" Margin="10,0,0,0"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{StaticResource TextMutedBrush}" />
+                                                </Grid>
                                             </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Cheat" Width="150" Binding="{Binding Group}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                                <Setter Property="Margin" Value="6,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Description" Width="*" Binding="{Binding Description}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                                <Setter Property="Margin" Value="4,0,0,0" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Address" Width="180" IsReadOnly="True"
-                                                        Binding="{Binding AddressText, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsResolved}" Value="False">
-                                                        <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Route" Width="90" IsReadOnly="True"
-                                                        Binding="{Binding RouteText, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="ToolTip" Value="When this route was last seen to still reach a value" />
-                                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding RouteText}" Value="not checked">
-                                                        <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Stored as" Width="150" IsReadOnly="True"
-                                                        Binding="{Binding TypeLabel, Mode=OneWay}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Value" Width="130" Binding="{Binding ValueText}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Hotkey" Width="110" Binding="{Binding Hotkey}">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BaseText}">
-                                                <Setter Property="Margin" Value="10,0,0,0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                </DataGrid.Columns>
-                            </DataGrid>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
 
-                            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                        Visibility="{Binding Cheats.Count, Converter={StaticResource EmptyToVis}}">
-                                <TextBlock Text="Nothing saved for this game yet" HorizontalAlignment="Center"
-                                           FontSize="12.5" Foreground="{StaticResource TextFaintBrush}" />
-                                <TextBlock Text="Double-click a result to keep it here. Saved cheats come back automatically next time you attach."
-                                           HorizontalAlignment="Center" Margin="0,6,0,0" FontSize="11.5" MaxWidth="460"
-                                           TextAlignment="Center" TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextFaintBrush}" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
+                                <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                            IsVisible="{Binding !HasResults}">
+                                    <TextBlock Text="No results yet" HorizontalAlignment="Center" FontSize="13"
+                                               Foreground="{StaticResource TextFaintBrush}" />
+                                    <TextBlock HorizontalAlignment="Center" Margin="0,6,0,0" FontSize="11.5" MaxWidth="420"
+                                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                               Text="Type a number you can see in the game and press First scan. You do not need to know how the game stores it." />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <GridSplitter Grid.Row="3" ResizeDirection="Rows" />
+
+                        <!-- cheat table -->
+                        <Border Grid.Row="4" Margin="12,0,12,12" Classes="card" ClipToBounds="True" MinHeight="120">
+                            <Grid RowDefinitions="Auto,*">
+                                <Grid Grid.Row="0" Margin="12,9,10,7">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="CHEAT TABLE" Classes="section" Margin="0" />
+                                        <TextBlock Text="{Binding GameName}" Margin="10,0,0,0" FontSize="11"
+                                                   Foreground="{StaticResource TextFaintBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+                                        <CheckBox Content="Freeze all" IsChecked="{Binding FreezeAll}"
+                                                  VerticalAlignment="Center" Margin="0,0,8,0"
+                                                  ToolTip.Tip="Hold every value in this table where it is" />
+                                        <Button Content="Re-check routes" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding RecheckRoutesCommand}" IsVisible="{Binding HasRoutes}"
+                                                ToolTip.Tip="Follow every saved route again. A route only proves itself after the game has restarted." />
+                                        <Button Content="Set value…" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding SetValueCommand}"
+                                                CommandParameter="{Binding #CheatsGrid.SelectedItems}"
+                                                ToolTip.Tip="Write one value into every selected entry" />
+                                        <Button Content="Freeze" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding FreezeSelectedCommand}"
+                                                CommandParameter="{Binding #CheatsGrid.SelectedItems}"
+                                                ToolTip.Tip="Hold the selected values where they are" />
+                                        <Button Content="Remove" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding RemoveCheatCommand}"
+                                                CommandParameter="{Binding #CheatsGrid.SelectedItems}" />
+                                        <Button Content="Save" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding SaveTableCommand}"
+                                                ToolTip.Tip="Save this game's cheats to your library  (Ctrl+S)" />
+                                        <Button Content="Export" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding ExportTableCommand}" />
+                                        <Button Content="Import" Padding="10,4" MinHeight="26" FontSize="11.5"
+                                                Command="{Binding ImportTableCommand}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <DataGrid Name="CheatsGrid" Grid.Row="1" ItemsSource="{Binding Cheats}"
+                                          SelectionMode="Extended" IsReadOnly="False">
+                                    <DataGrid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Set value…" Command="{Binding SetValueCommand}"
+                                                      CommandParameter="{Binding #CheatsGrid.SelectedItems}" />
+                                            <MenuItem Header="Freeze at value…" Command="{Binding FreezeAtValueCommand}"
+                                                      CommandParameter="{Binding #CheatsGrid.SelectedItems}" />
+                                            <MenuItem Header="See what touches this…" Click="OnWatchCheat"
+                                                      ToolTip.Tip="Wait for the game to touch this address, and see which code did" />
+                                            <MenuItem Header="Show in memory…" Click="OnShowCheatInMemory"
+                                                      ToolTip.Tip="Look at the bytes around this address, and what else is in the same object" />
+                                            <MenuItem Header="Find a stable address…" Click="OnFindPointerPath"
+                                                      ToolTip.Tip="Trace a route that still finds this value after a restart" />
+                                            <Separator />
+                                            <MenuItem Header="Name this cheat…" Command="{Binding GroupSelectedCommand}"
+                                                      CommandParameter="{Binding #CheatsGrid.SelectedItems}" />
+                                            <MenuItem Header="Freeze / release" Command="{Binding FreezeSelectedCommand}"
+                                                      CommandParameter="{Binding #CheatsGrid.SelectedItems}" />
+                                            <Separator />
+                                            <MenuItem Header="Select all" InputGesture="Ctrl+A" Click="OnSelectAllCheats" />
+                                            <MenuItem Header="Copy address" Click="OnCopyCheatAddress" />
+                                            <Separator />
+                                            <MenuItem Header="Remove" Command="{Binding RemoveCheatCommand}"
+                                                      CommandParameter="{Binding #CheatsGrid.SelectedItems}" />
+                                        </ContextMenu>
+                                    </DataGrid.ContextMenu>
+                                    <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="Freeze" Width="72" IsReadOnly="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="vm:CheatRow">
+                                                    <CheckBox IsChecked="{Binding Frozen}" HorizontalAlignment="Center" Padding="0"
+                                                              ToolTip.Tip="Keep rewriting this value" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Cheat" Width="150" Binding="{Binding Group}"
+                                                            Foreground="{StaticResource AccentBrush}" x:DataType="vm:CheatRow" />
+                                        <DataGridTextColumn Header="Description" Width="*" Binding="{Binding Description}"
+                                                            x:DataType="vm:CheatRow" />
+                                        <DataGridTemplateColumn Header="Address" Width="180" IsReadOnly="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="vm:CheatRow">
+                                                    <TextBlock Text="{Binding AddressText}" Classes="mono" Margin="10,0,0,0"
+                                                               Foreground="{StaticResource TextMutedBrush}"
+                                                               Classes.unresolved="{Binding !IsResolved}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTemplateColumn Header="Route" Width="90" IsReadOnly="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="vm:CheatRow">
+                                                    <TextBlock Text="{Binding RouteText}" Margin="10,0,0,0"
+                                                               Foreground="{StaticResource SuccessBrush}"
+                                                               ToolTip.Tip="When this route was last seen to still reach a value"
+                                                               Classes.unchecked="{Binding RouteText, Converter={x:Static inf:EqualsConverter.Instance}, ConverterParameter='not checked'}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTemplateColumn Header="Stored as" Width="150" IsReadOnly="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="vm:CheatRow">
+                                                    <TextBlock Text="{Binding TypeLabel}" Margin="10,0,0,0"
+                                                               Foreground="{StaticResource TextFaintBrush}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Value" Width="130" Binding="{Binding ValueText}"
+                                                            FontFamily="{StaticResource MonoFont}"
+                                                            Foreground="{StaticResource AccentBrush}" x:DataType="vm:CheatRow" />
+                                        <DataGridTextColumn Header="Hotkey" Width="110" Binding="{Binding Hotkey}"
+                                                            Foreground="{StaticResource TextFaintBrush}" x:DataType="vm:CheatRow" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                            IsVisible="{Binding Cheats.Count, Converter={x:Static inf:NotEmpty.Inverted}}">
+                                    <TextBlock Text="Nothing saved for this game yet" HorizontalAlignment="Center"
+                                               FontSize="12.5" Foreground="{StaticResource TextFaintBrush}" />
+                                    <TextBlock Text="Double-click a result to keep it here. Saved cheats come back automatically next time you attach."
+                                               HorizontalAlignment="Center" Margin="0,6,0,0" FontSize="11.5" MaxWidth="460"
+                                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Grid>
+
+                <Panel Grid.Row="3" IsVisible="{Binding IsLibraryView}">
+                    <views:LibraryView DataContext="{Binding Library}" />
+                </Panel>
+
+                <!-- ==================== status ==================== -->
+                <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,1,0,0">
+                    <Grid Margin="12,0">
+                        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{StaticResource TextFaintBrush}" Text="{Binding VersionText}" />
+                    </Grid>
+                </Border>
             </Grid>
-
-            <views:LibraryView Grid.Row="3" DataContext="{Binding Library}"
-                               Visibility="{Binding DataContext.IsLibraryView, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
-
-            <!-- ==================== status ==================== -->
-            <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="0,1,0,0">
-                <Grid Margin="12,0">
-                    <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{StaticResource TextFaintBrush}" Text="{Binding VersionText}" />
-                </Grid>
-            </Border>
-        </Grid>
-    </Border>
+        </Border>
+        <views:ResizeGrips />
+    </Panel>
 </Window>

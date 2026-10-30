@@ -77,6 +77,9 @@ public sealed class LazyResultList : IList<ResultRow>, IList, INotifyCollectionC
 
     public int Count { get; }
     public int TotalCount { get; }
+
+    /// <summary>How many rows have been built so far: the grid should only ever ask for the ones it shows.</summary>
+    internal int RealizedCount => _cache.Count;
     public bool IsCapped => TotalCount > Count;
 
     public event NotifyCollectionChangedEventHandler? CollectionChanged { add { } remove { } }

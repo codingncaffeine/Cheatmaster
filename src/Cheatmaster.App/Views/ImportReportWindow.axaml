@@ -1,72 +1,56 @@
-<Window x:Class="Cheatmaster.App.Views.ImportReportWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:cheats="using:Cheatmaster.Core.Cheats"
+        xmlns:views="using:Cheatmaster.App.Views"
+        x:Class="Cheatmaster.App.Views.ImportReportWindow"
+        x:DataType="cheats:ImportReport"
         Title="What could not be imported"
-        Icon="/Assets/cheatmaster.ico"
+        Icon="/Assets/logo.png"
         Height="480" Width="620" MinHeight="320" MinWidth="480"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource AppBackgroundBrush}"
-        FontFamily="{StaticResource UiFont}"
-        FontSize="12.5"
-        Foreground="{StaticResource TextBrush}"
-        UseLayoutRounding="True"
-        WindowStyle="None"
+        WindowDecorations="None"
         ShowInTaskbar="False">
 
-    <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
-                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
-    </WindowChrome.WindowChrome>
+    <Panel>
+        <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+            <Grid RowDefinitions="34,Auto,*,Auto">
+                <Grid Name="TitleBar" Grid.Row="0" Background="{StaticResource SurfaceBrush}">
+                    <TextBlock Text="What could not be imported" Margin="14,0,0,0" VerticalAlignment="Center"
+                               FontWeight="SemiBold" FontSize="12" />
+                    <Button Classes="caption close" HorizontalAlignment="Right" Click="OnClose" ToolTip.Tip="Close">
+                        <Path Classes="glyph" Data="{StaticResource IconClose}" />
+                    </Button>
+                </Grid>
 
-    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="34" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <Grid Grid.Row="0" Background="{StaticResource SurfaceBrush}">
-                <TextBlock Text="What could not be imported" Margin="14,0,0,0" VerticalAlignment="Center"
-                           FontWeight="SemiBold" FontSize="12" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnClose" />
+                <StackPanel Grid.Row="1" Margin="20,16,20,0">
+                    <TextBlock Text="{Binding Summary}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" LineHeight="19"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Text="Most of a Cheat Engine table is an address, a type and a chain of offsets, and all of that comes across. What does not is the half of Cheat Engine that is a programming environment. These are listed rather than dropped, because an entry that looks imported and quietly does nothing is worse than one that was refused." />
                 </StackPanel>
+
+                <Border Grid.Row="2" Margin="20,14,20,0" Classes="card" ClipToBounds="True">
+                    <ListBox ItemsSource="{Binding Skipped}" Margin="6">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="cheats:ImportProblem">
+                                <StackPanel Margin="0,3">
+                                    <TextBlock Text="{Binding Description}" FontSize="12.5" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" Foreground="{StaticResource TextBrush}" />
+                                    <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
+                                               TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
+                <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,1,0,0" Padding="16,12" Margin="0,14,0,0">
+                    <Button Content="Close" Click="OnClose" MinWidth="100" HorizontalAlignment="Right"
+                            Classes="primary" IsDefault="True" IsCancel="True" />
+                </Border>
             </Grid>
-
-            <StackPanel Grid.Row="1" Margin="20,16,20,0">
-                <TextBlock Text="{Binding Summary}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
-                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" LineHeight="19"
-                           Foreground="{StaticResource TextMutedBrush}"
-                           Text="Most of a Cheat Engine table is an address, a type and a chain of offsets, and all of that comes across. What does not is the half of Cheat Engine that is a programming environment. These are listed rather than dropped, because an entry that looks imported and quietly does nothing is worse than one that was refused." />
-            </StackPanel>
-
-            <Border Grid.Row="2" Margin="20,14,20,0" Style="{StaticResource CardBorder}" ClipToBounds="True">
-                <ListBox ItemsSource="{Binding Skipped}" Margin="6"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Margin="0,3">
-                                <TextBlock Text="{Binding Description}" FontSize="12.5" FontWeight="SemiBold"
-                                           TextTrimming="CharacterEllipsis"
-                                           Foreground="{StaticResource TextBrush}" />
-                                <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
-                                           TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextFaintBrush}" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Border>
-
-            <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="0,1,0,0" Padding="16,12" Margin="0,14,0,0">
-                <Button Content="Close" Click="OnClose" MinWidth="100" HorizontalAlignment="Right"
-                        Style="{StaticResource PrimaryButton}" />
-            </Border>
-        </Grid>
-    </Border>
+        </Border>
+        <views:ResizeGrips />
+    </Panel>
 </Window>

@@ -1,7 +1,8 @@
 using System.Globalization;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Cheatmaster.App.Services;
 using Cheatmaster.Core.Memory;
 
 namespace Cheatmaster.App.Views;
@@ -9,36 +10,42 @@ namespace Cheatmaster.App.Views;
 public partial class ProcessPickerWindow : Window
 {
     private List<ProcessCandidate> _all = [];
+    private int _loads;
 
     public ProcessPickerWindow()
     {
         InitializeComponent();
-        Loaded += (_, _) =>
+        WindowChrome.DragBy(this, TitleBar);
+        Opened += (_, _) =>
         {
             Reload();
             SearchBox.Focus();
         };
     }
 
-    public ProcessCandidate? Selected { get; private set; }
-
-    private void Reload()
+    /// <summary>Lists processes on a worker: reading every process's details takes a moment.</summary>
+    private async void Reload()
     {
-        Mouse.OverrideCursor = Cursors.Wait;
+        int load = ++_loads;
+        bool everything = ShowAllBox.IsChecked == true;
+        CountLabel.Text = "Looking…";
+        Cursor = new Cursor(StandardCursorType.Wait);
         try
         {
-            _all = ProcessList.Enumerate(ShowAllBox.IsChecked == true);
+            var found = await Task.Run(() => ProcessList.Enumerate(everything));
+            if (load != _loads) return;
+            _all = found;
             ApplyFilter();
         }
         finally
         {
-            Mouse.OverrideCursor = null;
+            if (load == _loads) Cursor = Cursor.Default;
         }
     }
 
     private void ApplyFilter()
     {
-        string needle = SearchBox.Text.Trim();
+        string needle = (SearchBox.Text ?? string.Empty).Trim();
         IEnumerable<ProcessCandidate> view = _all;
 
         if (needle.Length > 0)
@@ -56,31 +63,25 @@ public partial class ProcessPickerWindow : Window
         if (list.Count > 0) ProcessListBox.SelectedIndex = 0;
     }
 
-    private void OnSearchChanged(object sender, TextChangedEventArgs e)
+    private void OnSearchChanged(object? sender, TextChangedEventArgs e)
     {
         if (IsLoaded) ApplyFilter();
     }
 
-    private void OnRefresh(object sender, RoutedEventArgs e) => Reload();
+    private void OnRefresh(object? sender, RoutedEventArgs e) => Reload();
 
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e) =>
         AttachButton.IsEnabled = ProcessListBox.SelectedItem is ProcessCandidate;
 
-    private void OnListDoubleClick(object sender, MouseButtonEventArgs e) => Accept();
+    private void OnListDoubleClick(object? sender, TappedEventArgs e) => Accept();
 
-    private void OnAttach(object sender, RoutedEventArgs e) => Accept();
+    private void OnAttach(object? sender, RoutedEventArgs e) => Accept();
 
     private void Accept()
     {
         if (ProcessListBox.SelectedItem is not ProcessCandidate candidate) return;
-        Selected = candidate;
-        DialogResult = true;
-        Close();
+        Close(candidate);
     }
 
-    private void OnCancel(object sender, RoutedEventArgs e)
-    {
-        DialogResult = false;
-        Close();
-    }
+    private void OnCancel(object? sender, RoutedEventArgs e) => Close(null);
 }

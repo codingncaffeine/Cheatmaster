@@ -1,5 +1,7 @@
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Cheatmaster.App.Services;
 using Cheatmaster.App.ViewModels;
 using Cheatmaster.Core.Native;
@@ -10,34 +12,34 @@ public partial class App : Application
 {
     public static bool DiagnosticMode { get; private set; }
 
-    protected override void OnStartup(StartupEventArgs e)
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    public override void OnFrameworkInitializationCompleted()
     {
-        base.OnStartup(e);
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            DiagnosticMode = desktop.Args?.Any(a => string.Equals(a, "--diag", StringComparison.OrdinalIgnoreCase)) == true;
 
-        DiagnosticMode = e.Args.Any(a => string.Equals(a, "--diag", StringComparison.OrdinalIgnoreCase));
+            // Ask for debug rights up front; without them most Windows targets refuse to open.
+            Privileges.EnableDebugPrivilege();
 
-        // Ask for debug rights up front; without them most targets refuse to open.
-        Privileges.EnableDebugPrivilege();
+            Dispatcher.UIThread.UnhandledException += OnUnhandledException;
 
-        DispatcherUnhandledException += OnUnhandledException;
+            var window = new MainWindow();
+            desktop.MainWindow = window;
 
-        var window = new MainWindow();
-        MainWindow = window;
+            BindingErrorSink.Attach(DiagnosticMode
+                ? line => window.ViewModel.Notify("Binding problem: " + line, NoticeKind.Error)
+                : null);
+        }
 
-        BindingErrorListener.Attach(DiagnosticMode
-            ? line => window.ViewModel.Notify("Binding problem: " + line, NoticeKind.Error)
-            : null);
-
-        window.Show();
+        base.OnFrameworkInitializationCompleted();
     }
 
-    private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    private static void OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        MessageBox.Show(
-            e.Exception.Message + Environment.NewLine + Environment.NewLine + e.Exception.StackTrace,
-            "Cheatmaster hit an error",
-            MessageBoxButton.OK,
-            MessageBoxImage.Error);
         e.Handled = true;
+        _ = Dialogs.ShowErrorAsync("Cheatmaster hit an error",
+            e.Exception.Message + Environment.NewLine + Environment.NewLine + e.Exception.StackTrace);
     }
 }

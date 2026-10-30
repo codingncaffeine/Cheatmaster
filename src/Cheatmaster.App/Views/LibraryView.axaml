@@ -1,70 +1,43 @@
-<UserControl x:Class="Cheatmaster.App.Views.LibraryView"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="{StaticResource AppBackgroundBrush}"
-             FontFamily="{StaticResource UiFont}"
-             FontSize="12.5"
-             Foreground="{StaticResource TextBrush}">
+             xmlns:vm="using:Cheatmaster.App.ViewModels"
+             xmlns:inf="using:Cheatmaster.App.Infrastructure"
+             x:Class="Cheatmaster.App.Views.LibraryView"
+             x:DataType="vm:LibraryViewModel"
+             Background="{StaticResource AppBackgroundBrush}">
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
+    <Grid RowDefinitions="Auto,*">
         <!-- toolbar -->
-        <Grid Grid.Row="0" Margin="14,14,14,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
+        <Grid Grid.Row="0" Margin="14,14,14,10" ColumnDefinitions="*,Auto">
             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                <TextBox Width="280" Tag="search your saved games"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox Width="280" PlaceholderText="search your saved games" Text="{Binding SearchText}" />
                 <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="14,0,0,0"
-                           FontSize="11.5" Foreground="{StaticResource TextFaintBrush}"
-                           TextTrimming="CharacterEllipsis" />
+                           FontSize="11.5" Foreground="{StaticResource TextFaintBrush}" TextTrimming="CharacterEllipsis" />
             </StackPanel>
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button Content="Find artwork" Command="{Binding FetchArtCommand}" Margin="0,0,8,0"
-                        ToolTip="Look up covers and descriptions for every saved game" />
-                <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="Find artwork" Command="{Binding FetchArtCommand}"
+                        ToolTip.Tip="Look up covers and descriptions for every saved game" />
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" />
                 <Button Content="Cloud backup" Click="OnCloudBackup"
-                        ToolTip="Back your library up to a private GitHub repository" />
+                        ToolTip.Tip="Back your library up to a private GitHub repository" />
             </StackPanel>
         </Grid>
 
         <!-- body -->
-        <Grid Grid.Row="1" Margin="14,0,14,14">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="360" />
-                <ColumnDefinition Width="5" />
-                <ColumnDefinition Width="380" MinWidth="280" />
-            </Grid.ColumnDefinitions>
-
+        <Grid Grid.Row="1" Margin="14,0,14,14" ColumnDefinitions="*,5,380">
             <!-- game grid -->
-            <Border Grid.Column="0" Style="{StaticResource CardBorder}" ClipToBounds="True">
+            <Border Grid.Column="0" Classes="card" ClipToBounds="True" MinWidth="360">
                 <Grid>
-                    <ListBox x:Name="GameList" ItemsSource="{Binding Games}"
-                             SelectedItem="{Binding Selected}" Margin="8"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             MouseDoubleClick="OnGameDoubleClick">
+                    <ListBox Name="GameList" Classes="games" ItemsSource="{Binding Games}"
+                             SelectedItem="{Binding Selected}" Margin="8" DoubleTapped="OnGameDoubleClick">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal" />
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-                                <Setter Property="Padding" Value="6" />
-                                <Setter Property="Margin" Value="2" />
-                            </Style>
-                        </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
-                            <DataTemplate>
+                            <DataTemplate x:DataType="vm:LibraryGameRow">
                                 <StackPanel Width="148">
                                     <Grid Height="222">
                                         <Border CornerRadius="5" Background="{StaticResource SurfaceRaisedBrush}"
@@ -72,27 +45,15 @@
 
                                         <TextBlock Text="{Binding Initials}" FontSize="42" FontWeight="Bold"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TextFaintBrush}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Visible" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding HasCover}" Value="True">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
+                                                   Foreground="{StaticResource TextFaintBrush}" IsVisible="{Binding !HasCover}" />
 
                                         <Border CornerRadius="5" ClipToBounds="True">
                                             <Image Source="{Binding Cover}" Stretch="UniformToFill"
-                                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                                                   RenderOptions.BitmapInterpolationMode="HighQuality" />
                                         </Border>
 
                                         <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                                                Margin="6" CornerRadius="9" Padding="7,2"
-                                                Background="#CC17181B">
+                                                Margin="6" CornerRadius="9" Padding="7,2" Background="#CC17181B">
                                             <TextBlock Text="{Binding CheatSummary}" FontSize="10.5"
                                                        Foreground="{StaticResource AccentBrush}" />
                                         </Border>
@@ -101,15 +62,14 @@
                                     <TextBlock Text="{Binding Name}" Margin="1,7,1,0" FontSize="12"
                                                FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Subtitle}" Margin="1,2,1,0" FontSize="10.5"
-                                               Foreground="{StaticResource TextFaintBrush}"
-                                               TextTrimming="CharacterEllipsis" />
+                                               Foreground="{StaticResource TextFaintBrush}" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
 
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420"
-                                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                                IsVisible="{Binding IsEmpty}">
                         <TextBlock Text="Your library is empty" HorizontalAlignment="Center" FontSize="14"
                                    Foreground="{StaticResource TextMutedBrush}" />
                         <TextBlock Margin="0,8,0,0" TextAlignment="Center" TextWrapping="Wrap" FontSize="12"
@@ -119,42 +79,34 @@
                 </Grid>
             </Border>
 
-            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                          ResizeBehavior="PreviousAndNext" />
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
 
             <!-- detail -->
-            <Border Grid.Column="2" Style="{StaticResource CardBorder}" ClipToBounds="True">
-                <Grid Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Margin="16,16,16,0">
-                        <TextBlock Text="{Binding Selected.Name}" FontSize="17" FontWeight="SemiBold"
+            <Border Grid.Column="2" Classes="card" ClipToBounds="True" MinWidth="280">
+                <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding HasSelection}">
+                    <StackPanel Grid.Row="0" Margin="16,16,16,0" DataContext="{Binding Selected}" x:DataType="vm:LibraryGameRow">
+                        <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold"
                                    TextWrapping="Wrap" />
 
                         <!-- who made it, when, and what kind of game it is -->
-                        <TextBlock Text="{Binding Selected.MetaLine}" Margin="0,5,0,0" FontSize="11.5"
+                        <TextBlock Text="{Binding MetaLine}" Margin="0,5,0,0" FontSize="11.5"
                                    TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}"
-                                   Visibility="{Binding Selected.MetaLine, Converter={StaticResource NotEmptyToVis}}" />
+                                   IsVisible="{Binding MetaLine, Converter={x:Static inf:NotEmpty.Instance}}" />
 
-                        <TextBlock Text="{Binding Selected.Description}" Margin="0,12,0,0" TextWrapping="Wrap"
+                        <TextBlock Text="{Binding Description}" Margin="0,12,0,0" TextWrapping="Wrap"
                                    FontSize="12" LineHeight="18" Foreground="{StaticResource TextMutedBrush}"
                                    MaxHeight="150" TextTrimming="CharacterEllipsis"
-                                   Visibility="{Binding Selected.HasDescription, Converter={StaticResource BoolToVis}}" />
+                                   IsVisible="{Binding HasDescription}" />
 
                         <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" FontSize="11.5"
                                    Foreground="{StaticResource TextFaintBrush}"
-                                   Visibility="{Binding Selected.HasDescription, Converter={StaticResource BoolToVisInverted}}"
+                                   IsVisible="{Binding !HasDescription}"
                                    Text="No store listing was found for this one. Find artwork tries again, and Set cover lets you pick your own." />
 
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <TextBlock Text="{Binding Selected.ExecutableName}" FontSize="11"
-                                       FontFamily="{StaticResource MonoFont}"
-                                       Foreground="{StaticResource TextFaintBrush}" />
-                            <TextBlock Text="{Binding Selected.ModifiedText}" FontSize="11" Margin="12,0,0,0"
+                            <TextBlock Text="{Binding ExecutableName}" FontSize="11"
+                                       FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextFaintBrush}" />
+                            <TextBlock Text="{Binding ModifiedText}" FontSize="11" Margin="12,0,0,0"
                                        Foreground="{StaticResource TextFaintBrush}" />
                         </StackPanel>
                     </StackPanel>
@@ -167,155 +119,96 @@
                         <Button Content="Show file" Command="{Binding RevealCommand}" Margin="0,0,6,6"
                                 Padding="10,4" MinHeight="26" FontSize="11.5" />
                         <Button Content="Delete" Command="{Binding DeleteCommand}" Margin="0,0,6,6"
-                                Padding="10,4" MinHeight="26" FontSize="11.5"
-                                Style="{StaticResource DangerButton}" />
+                                Padding="10,4" MinHeight="26" FontSize="11.5" Classes="danger" />
                     </WrapPanel>
 
-                    <Grid Grid.Row="2" Margin="16,0,16,16">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
+                    <Grid Grid.Row="2" Margin="16,0,16,16" RowDefinitions="Auto,*">
                         <StackPanel Grid.Row="0">
-                            <TextBlock Text="NOTES" Style="{StaticResource SectionLabel}" />
-                            <TextBox Text="{Binding Selected.Notes, UpdateSourceTrigger=LostFocus}"
+                            <TextBlock Text="NOTES" Classes="section" />
+                            <TextBox DataContext="{Binding Selected}" x:DataType="vm:LibraryGameRow"
+                                     Text="{Binding Notes, UpdateSourceTrigger=LostFocus}"
                                      AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" MaxHeight="120"
-                                     VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
-                                     Tag="how you found these, what still needs work…" Margin="0,0,0,14" />
+                                     VerticalContentAlignment="Top"
+                                     PlaceholderText="how you found these, what still needs work…" Margin="0,0,0,14" />
 
-                            <TextBlock Text="SAVED CHEATS" Style="{StaticResource SectionLabel}" />
+                            <TextBlock Text="SAVED CHEATS" Classes="section" />
                         </StackPanel>
 
-                        <ItemsControl Grid.Row="1" ItemsSource="{Binding SelectedGroups}">
-                            <ItemsControl.Template>
-                                <ControlTemplate TargetType="ItemsControl">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <ItemsPresenter />
-                                    </ScrollViewer>
-                                </ControlTemplate>
-                            </ItemsControl.Template>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource SurfaceRaisedBrush}" CornerRadius="5"
-                                            Margin="0,0,0,6" BorderThickness="1">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding AnyFrozen}" Value="True">
-                                                        <Setter Property="BorderBrush" Value="#555FA88E" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding SelectedGroups}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:LibraryGroupRow">
+                                        <Border Background="{StaticResource SurfaceRaisedBrush}" CornerRadius="5"
+                                                Margin="0,0,0,6" BorderThickness="1"
+                                                Classes="saved-group" Classes.frozen="{Binding AnyFrozen}">
+                                            <StackPanel>
+                                                <!-- one line per cheat: name, size, and what it is held at -->
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <ToggleButton Grid.Column="0" Classes="expander-header"
+                                                                  HorizontalContentAlignment="Left" Margin="10,4,0,4"
+                                                                  IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                                  ToolTip.Tip="Show the addresses behind this cheat">
+                                                        <StackPanel Margin="2,0,0,0">
+                                                            <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Summary}" FontSize="10.5" Margin="0,2,0,0"
+                                                                       Foreground="{StaticResource TextFaintBrush}" />
+                                                        </StackPanel>
+                                                    </ToggleButton>
 
-                                        <StackPanel>
-                                            <!-- one line per cheat: name, size, and what it is held at -->
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                                VerticalAlignment="Center" Margin="0,0,8,0" Spacing="4">
+                                                        <Border Background="#1F5FA88E" CornerRadius="8" Padding="7,2"
+                                                                Margin="0,0,2,0" VerticalAlignment="Center"
+                                                                IsVisible="{Binding HeldValue, Converter={x:Static inf:NotEmpty.Instance}}">
+                                                            <TextBlock Text="{Binding HeldValue, StringFormat='held at {0}'}"
+                                                                       FontSize="10" Foreground="{StaticResource SuccessBrush}" />
+                                                        </Border>
 
-                                                <ToggleButton Grid.Column="0" Cursor="Hand" HorizontalAlignment="Stretch"
-                                                              HorizontalContentAlignment="Left"
-                                                              IsChecked="{Binding IsExpanded, Mode=TwoWay}"
-                                                              ToolTip="Show the addresses behind this cheat">
-                                                    <ToggleButton.Template>
-                                                        <ControlTemplate TargetType="ToggleButton">
-                                                            <Border Background="Transparent" Padding="10,9">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <Path x:Name="Arrow" Data="M0,0 L4,4 L0,8"
-                                                                          Stroke="{StaticResource TextMutedBrush}"
-                                                                          StrokeThickness="1.4" VerticalAlignment="Center"
-                                                                          Margin="2,0,10,0" RenderTransformOrigin="0.4,0.5" />
-                                                                    <StackPanel>
-                                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                                   FontSize="13" FontWeight="SemiBold"
-                                                                                   TextTrimming="CharacterEllipsis" />
-                                                                        <TextBlock Text="{Binding Summary}" FontSize="10.5"
-                                                                                   Margin="0,2,0,0"
-                                                                                   Foreground="{StaticResource TextFaintBrush}" />
-                                                                    </StackPanel>
+                                                        <Button Content="Value…" Padding="9,3" MinHeight="24" FontSize="11"
+                                                                ToolTip.Tip="Set the value this cheat is held at, ready for next time"
+                                                                Command="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).SetGroupValueCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="Rename" Padding="9,3" MinHeight="24" FontSize="11"
+                                                                Command="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).RenameGroupCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="Hold" Padding="9,3" MinHeight="24" FontSize="11"
+                                                                ToolTip.Tip="Hold or release every address in this cheat"
+                                                                Command="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).ReleaseGroupCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- the addresses behind it, only when asked for -->
+                                                <ItemsControl ItemsSource="{Binding Items}" Margin="30,0,10,9"
+                                                              IsVisible="{Binding IsExpanded}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:SavedCheatRow">
+                                                            <Grid Margin="0,4,0,0" ColumnDefinitions="*,Auto">
+                                                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                                    <TextBlock Text="{Binding Address}" FontSize="11"
+                                                                               FontFamily="{StaticResource MonoFont}"
+                                                                               Foreground="{StaticResource TextMutedBrush}" />
+                                                                    <TextBlock Text="{Binding Type}" FontSize="10.5"
+                                                                               Margin="10,0,0,0" VerticalAlignment="Center"
+                                                                               Foreground="{StaticResource TextFaintBrush}" />
                                                                 </StackPanel>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsChecked" Value="True">
-                                                                    <Setter TargetName="Arrow" Property="RenderTransform">
-                                                                        <Setter.Value>
-                                                                            <RotateTransform Angle="90" />
-                                                                        </Setter.Value>
-                                                                    </Setter>
-                                                                </Trigger>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="Arrow" Property="Stroke"
-                                                                            Value="{StaticResource AccentBrush}" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </ToggleButton.Template>
-                                                </ToggleButton>
-
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                                            VerticalAlignment="Center" Margin="0,0,8,0">
-                                                    <Border Background="#1F5FA88E" CornerRadius="8" Padding="7,2"
-                                                            Margin="0,0,6,0" VerticalAlignment="Center"
-                                                            Visibility="{Binding HeldValue, Converter={StaticResource NotEmptyToVis}}">
-                                                        <TextBlock Text="{Binding HeldValue, StringFormat=held at {0}}"
-                                                                   FontSize="10" Foreground="{StaticResource SuccessBrush}" />
-                                                    </Border>
-
-                                                    <Button Content="Value…" Padding="9,3" MinHeight="24" FontSize="11"
-                                                            Margin="0,0,4,0"
-                                                            ToolTip="Set the value this cheat is held at, ready for next time"
-                                                            Command="{Binding DataContext.SetGroupValueCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}" />
-                                                    <Button Content="Rename" Padding="9,3" MinHeight="24" FontSize="11"
-                                                            Margin="0,0,4,0"
-                                                            Command="{Binding DataContext.RenameGroupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}" />
-                                                    <Button Content="Hold" Padding="9,3" MinHeight="24" FontSize="11"
-                                                            ToolTip="Hold or release every address in this cheat"
-                                                            Command="{Binding DataContext.ReleaseGroupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}" />
-                                                </StackPanel>
-                                            </Grid>
-
-                                            <!-- the addresses behind it, only when asked for -->
-                                            <ItemsControl ItemsSource="{Binding Items}" Margin="30,0,10,9"
-                                                          Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Grid Margin="0,4,0,0">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*" />
-                                                                <ColumnDefinition Width="Auto" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding Address}" FontSize="11"
-                                                                           FontFamily="{StaticResource MonoFont}"
-                                                                           Foreground="{StaticResource TextMutedBrush}" />
-                                                                <TextBlock Text="{Binding Type}" FontSize="10.5"
-                                                                           Margin="10,0,0,0" VerticalAlignment="Center"
-                                                                           Foreground="{StaticResource TextFaintBrush}" />
-                                                            </StackPanel>
-                                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding FrozenAt}" FontSize="10.5"
-                                                                           Margin="0,0,8,0"
-                                                                           Foreground="{StaticResource SuccessBrush}" />
-                                                                <TextBlock Text="{Binding Hotkey}" FontSize="10.5"
-                                                                           Foreground="{StaticResource TextFaintBrush}" />
-                                                            </StackPanel>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                                    <TextBlock Text="{Binding FrozenAt}" FontSize="10.5" Margin="0,0,8,0"
+                                                                               Foreground="{StaticResource SuccessBrush}" />
+                                                                    <TextBlock Text="{Binding Hotkey}" FontSize="10.5"
+                                                                               Foreground="{StaticResource TextFaintBrush}" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </Grid>
                 </Grid>
             </Border>

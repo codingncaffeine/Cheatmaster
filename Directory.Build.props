@@ -5,17 +5,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-    <!-- Do NOT turn on InvariantGlobalization: WPF resolves FrameworkElement.Language through
-         CultureInfo.CreateSpecificCulture, which throws in invariant mode. -->
+    <!-- Culture-aware: values the user types and reads follow their own number format. On Linux that
+         needs ICU, which the packages declare. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <SelfContained>false</SelfContained>
     <Version>0.0.4</Version>
     <Product>Cheatmaster</Product>
     <Company>codingncaffeine</Company>
     <Copyright>Copyright (C) 2026 codingncaffeine</Copyright>
+    <AvaloniaVersion>12.1.3</AvaloniaVersion>
   </PropertyGroup>
 </Project>

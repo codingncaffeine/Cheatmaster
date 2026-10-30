@@ -44,7 +44,7 @@ public sealed class AppSettings
     };
 
     public static string Directory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cheatmaster");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify), "Cheatmaster");
 
     public static string FilePath => Path.Combine(Directory, "settings.json");
 

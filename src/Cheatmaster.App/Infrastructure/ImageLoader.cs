@@ -1,36 +1,26 @@
-using System.IO;
-using System.Windows.Media.Imaging;
+using Avalonia.Media.Imaging;
 
 namespace Cheatmaster.App.Infrastructure;
 
 public static class ImageLoader
 {
     /// <summary>
-    /// Loads a bitmap without holding the file open and without going through WPF's image cache,
-    /// so replacing a cover on disk actually shows the new one.
-    ///
-    /// Deliberately does NOT set BitmapCreateOptions.IgnoreImageCache. That flag exists to defeat
-    /// the cache WPF keys by URI, and setting it alongside a StreamSource throws
-    /// ArgumentNullException("key") because there is no URI to key on — which reads as "the file
-    /// simply would not load". Reading through a stream bypasses that cache anyway.
+    /// Decodes a picture from disk without holding the file open, so replacing a cover on disk
+    /// shows the new one. Safe to call off the UI thread, which is where it belongs: decoding a
+    /// cover is real work, and the library grid asks for dozens at once.
     /// </summary>
-    public static BitmapImage? Load(string? path, int decodeWidth = 0)
+    public static Bitmap? Load(string? path, int decodeWidth = 0)
     {
         if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
 
         try
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            if (decodeWidth > 0) image.DecodePixelWidth = decodeWidth;
-            image.StreamSource = stream;
-            image.EndInit();
-            image.Freeze();
-            return image;
+            return decodeWidth > 0
+                ? Bitmap.DecodeToWidth(stream, decodeWidth, BitmapInterpolationMode.HighQuality)
+                : new Bitmap(stream);
         }
-        catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
         {
             return null;
         }

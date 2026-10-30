@@ -1,6 +1,4 @@
-using System.IO;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using SkiaSharp;
 
 namespace Cheatmaster.App.Services;
 
@@ -24,32 +22,30 @@ public static class CoverOptimizer
 
         try
         {
-            using var input = new MemoryStream(original, writable: false);
-            var frame = BitmapFrame.Create(input, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            using var decoded = SKBitmap.Decode(original);
+            if (decoded is null) return original;
 
-            double scale = Math.Min(1.0, Math.Min(
-                (double)MaxWidth / frame.PixelWidth,
-                (double)MaxHeight / frame.PixelHeight));
-
-            BitmapSource source = frame;
+            double scale = Math.Min(1.0, Math.Min((double)MaxWidth / decoded.Width, (double)MaxHeight / decoded.Height));
+            SKBitmap source = decoded;
+            SKBitmap? scaled = null;
             if (scale < 1.0)
             {
-                var scaled = new TransformedBitmap(frame, new ScaleTransform(scale, scale));
-                scaled.Freeze();
-                source = scaled;
+                var size = new SKImageInfo(Math.Max(1, (int)Math.Round(decoded.Width * scale)),
+                    Math.Max(1, (int)Math.Round(decoded.Height * scale)));
+                scaled = decoded.Resize(size, new SKSamplingOptions(SKCubicResampler.Mitchell));
+                if (scaled is not null) source = scaled;
             }
 
-            var encoder = new JpegBitmapEncoder { QualityLevel = Quality };
-            encoder.Frames.Add(BitmapFrame.Create(source));
-
-            using var output = new MemoryStream();
-            encoder.Save(output);
-            byte[] shrunk = output.ToArray();
-
-            // Re-encoding a small or already-tight image can make it bigger.
-            return shrunk.Length > 0 && shrunk.Length < original.Length ? shrunk : original;
+            using (scaled)
+            using (var image = SKImage.FromBitmap(source))
+            using (var data = image.Encode(SKEncodedImageFormat.Jpeg, Quality))
+            {
+                byte[] shrunk = data?.ToArray() ?? [];
+                // Re-encoding a small or already-tight image can make it bigger.
+                return shrunk.Length > 0 && shrunk.Length < original.Length ? shrunk : original;
+            }
         }
-        catch (Exception ex) when (ex is NotSupportedException or IOException or ArgumentException or OverflowException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or OutOfMemoryException)
         {
             return original;
         }

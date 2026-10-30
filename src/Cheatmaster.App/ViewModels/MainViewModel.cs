@@ -3,13 +3,15 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
 using Cheatmaster.App.Infrastructure;
 using Cheatmaster.App.Services;
 using Cheatmaster.Core.Cheats;
 using Cheatmaster.Core.Memory;
 using Cheatmaster.Core.Native;
+using Cheatmaster.Core.Native.Linux;
 using Cheatmaster.Core.Scanning;
 
 namespace Cheatmaster.App.ViewModels;
@@ -57,7 +59,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         SaveTableCommand = new RelayCommand(SaveTableNow, () => IsAttached);
         ExportTableCommand = new RelayCommand(ExportTable, () => Cheats.Count > 0);
         ImportTableCommand = new RelayCommand(ImportTable);
-        RestartElevatedCommand = new RelayCommand(RestartElevated);
+        RestartElevatedCommand = new RelayCommand(FixAccess, () => !_fixingAccess);
         PinInterpretationCommand = new RelayCommand(o => PinInterpretation(o as InterpretationChip));
         KeepOnlyCommand = new RelayCommand(o => KeepOnly(o as InterpretationChip));
         FreezeSelectedCommand = new RelayCommand(o => FreezeSelected(o as IList));
@@ -425,7 +427,22 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         private set => Set(ref _noticeKind, value);
     }
 
-    public bool ShowElevationHint => !Privileges.IsElevated;
+    private bool _fixingAccess;
+
+    /// <summary>
+    /// The banner that says why games may refuse to open, and offers the fix: an elevated
+    /// restart on Windows, relaxing the ptrace policy on Linux.
+    /// </summary>
+    public bool ShowElevationHint => OperatingSystem.IsWindows() ? !Privileges.IsElevated : LinuxAccess.IsRestricted;
+
+    public string ElevationHintText => OperatingSystem.IsWindows() ? "Not running as administrator" : LinuxAccess.Hint;
+
+    public string ElevationActionLabel => OperatingSystem.IsWindows() ? "Restart elevated"
+        : LinuxAccess.CanRelax ? "Allow memory access" : "How to fix";
+
+    public string ElevationActionTip => OperatingSystem.IsWindows()
+        ? "Restart Cheatmaster with administrator rights"
+        : "Lets Cheatmaster read the memory of games you did not start from it, until the computer restarts. Asks for your password once.";
 
     public string VersionText =>
         "Cheatmaster " + (System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.4");
@@ -541,11 +558,26 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
     // ------------------------------------------------------------------ attach
 
-    public void Attach(ProcessCandidate candidate)
+    public async void Attach(ProcessCandidate candidate)
     {
-        var opened = TargetProcess.Open(candidate.Pid, out string error);
-        if (opened is null)
+        Status = $"Opening {candidate.Name}…";
+
+        // Opening reads the module list, and fingerprinting hashes the executable: both are real
+        // work on a large game, and none of it belongs on the UI thread.
+        var (opened, error, game) = await Task.Run(() =>
         {
+            var process = TargetProcess.Open(candidate.Pid, out string why);
+            if (process is null) return (null, why, null);
+            _ = process.Modules;
+            var print = string.IsNullOrEmpty(process.ImagePath)
+                ? GameFingerprint.Unknown(process.Name)
+                : GameFingerprint.For(process.ImagePath);
+            return ((TargetProcess?)process, string.Empty, (GameFingerprint?)print);
+        });
+
+        if (opened is null || game is null)
+        {
+            Status = "Not attached.";
             Notify(error, NoticeKind.Error);
             return;
         }
@@ -560,9 +592,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         ProcessSubtitle = $"pid {opened.Pid} · {(opened.Is64Bit ? "64-bit" : "32-bit")}" +
                           (opened.CanWrite ? string.Empty : " · read-only");
 
-        _game = string.IsNullOrEmpty(opened.ImagePath)
-            ? GameFingerprint.Unknown(opened.Name)
-            : GameFingerprint.For(opened.ImagePath);
+        _game = game;
         GameName = _game.DisplayName;
 
         LoadTableForGame();
@@ -572,7 +602,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         Status = $"Attached to {opened.Name}.";
         if (!opened.CanWrite)
-            Notify("Opened read-only — values can be found but not changed. Restart as administrator to edit.", NoticeKind.Warning);
+            Notify(OperatingSystem.IsWindows()
+                ? "Opened read-only — values can be found but not changed. Restart as administrator to edit."
+                : "Opened read-only — values can be found but not changed.", NoticeKind.Warning);
         else
             Notify($"Attached to {opened.Name}.", NoticeKind.Success);
     }
@@ -1084,16 +1116,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         // the library can show them as a single line instead of a wall of addresses.
         // The guide has already asked what this is, so it hands the name over rather than asking twice.
         string group = name?.Trim() ?? string.Empty;
-        if (rows.Count > 1 && group.Length == 0)
-        {
-            string suggestion = string.IsNullOrWhiteSpace(ValueText) ? "New cheat" : $"Value {ValueText}";
-            group = (PromptForValue?.Invoke(
-                "Name this cheat",
-                $"{Math.Min(rows.Count, Limit)} addresses will be kept together under one name:",
-                suggestion) ?? suggestion).Trim();
-
-            if (group.Length == 0) group = suggestion;
-        }
+        if (rows.Count > 1 && group.Length == 0) group = SuggestGroupName();
 
         foreach (var row in rows)
         {
@@ -1124,6 +1147,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Notify(message, NoticeKind.Success);
     }
 
+    private string SuggestGroupName() => string.IsNullOrWhiteSpace(ValueText) ? "New cheat" : $"Value {ValueText}";
+
     private string SuggestDescription()
     {
         string basis = string.IsNullOrWhiteSpace(ValueText) ? "Value" : $"Value {ValueText}";
@@ -1131,7 +1156,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         return $"{basis} #{n}";
     }
 
-    private void AddSelectedResults(object? parameter)
+    private async void AddSelectedResults(object? parameter)
     {
         if (parameter is not IList selection || selection.Count == 0)
         {
@@ -1145,7 +1170,19 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             if (item is ResultRow row) rows.Add(row);
         }
 
-        AddResults(rows);
+        // Several candidates added at once are usually one thing the player can see, so they are
+        // named once, up front.
+        string? name = null;
+        if (rows.Count > 1 && PromptForValue is { } prompt)
+        {
+            string suggestion = SuggestGroupName();
+            name = (await prompt("Name this cheat",
+                $"{Math.Min(rows.Count, 200)} addresses will be kept together under one name:",
+                suggestion) ?? suggestion).Trim();
+            if (name.Length == 0) name = suggestion;
+        }
+
+        AddResults(rows, name);
     }
 
     private void RemoveCheats(object? parameter)
@@ -1170,13 +1207,10 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Status = $"Removed {doomed.Count} entr{(doomed.Count == 1 ? "y" : "ies")}.";
     }
 
-    private void ClearCheats()
+    private async void ClearCheats()
     {
         if (Cheats.Count == 0) return;
-        var answer = MessageBox.Show(
-            $"Remove all {Cheats.Count} entries from this table?",
-            "Cheatmaster", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (answer != MessageBoxResult.Yes) return;
+        if (!await Dialogs.ConfirmAsync($"Remove all {Cheats.Count} entries from this table?")) return;
 
         Cheats.Clear();
         _table.Entries.Clear();
@@ -1187,7 +1221,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     /// Set from the view so bulk edits can ask for a value. A callback rather than a window
     /// reference, so the view model never opens a window itself.
     /// </summary>
-    public Func<string, string, string, string?>? PromptForValue { get; set; }
+    public Func<string, string, string, Task<string?>>? PromptForValue { get; set; }
 
     /// <summary>Every entry held. Reads false while any one of them is loose.</summary>
     public bool FreezeAll
@@ -1224,7 +1258,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     }
 
     /// <summary>Writes one value into every selected entry, optionally holding them there.</summary>
-    private void SetValueForSelected(object? parameter, bool alsoFreeze)
+    private async void SetValueForSelected(object? parameter, bool alsoFreeze)
     {
         var rows = Rows(parameter as IList);
         if (rows.Count == 0)
@@ -1243,7 +1277,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             ? $"Write this value to {rows[0].Description}:"
             : $"Write this value to all {rows.Count} selected entries:";
 
-        string? input = PromptForValue?.Invoke(alsoFreeze ? "Freeze at value" : "Set value", message, rows[0].ValueText);
+        if (PromptForValue is not { } prompt) return;
+        string? input = await prompt(alsoFreeze ? "Freeze at value" : "Set value", message, rows[0].ValueText);
         if (string.IsNullOrWhiteSpace(input)) return;
 
         int written = 0;
@@ -1278,7 +1313,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
     }
 
     /// <summary>Files the selected entries under one name, so the library shows them as one line.</summary>
-    private void GroupSelected(object? parameter)
+    private async void GroupSelected(object? parameter)
     {
         var rows = Rows(parameter as IList);
         if (rows.Count == 0)
@@ -1290,7 +1325,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         string suggestion = rows.Select(static r => r.Group).FirstOrDefault(static g => !string.IsNullOrWhiteSpace(g))
                             ?? (string.IsNullOrWhiteSpace(ValueText) ? "New cheat" : $"Value {ValueText}");
 
-        string? name = PromptForValue?.Invoke(
+        if (PromptForValue is not { } prompt) return;
+        string? name = await prompt(
             "Name this cheat",
             $"File {rows.Count} entr{(rows.Count == 1 ? "y" : "ies")} under:",
             suggestion);
@@ -1360,20 +1396,17 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         Notify($"Saved {_table.Entries.Count} cheat(s) for {_table.GameName}.", NoticeKind.Success);
     }
 
-    private void ExportTable()
+    private async void ExportTable()
     {
-        var dialog = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "Export cheat table",
-            Filter = "Cheatmaster table (*.cmt)|*.cmt",
-            FileName = (string.IsNullOrWhiteSpace(_table.GameName) ? "cheats" : _table.GameName) + CheatTable.FileExtension
-        };
-        if (dialog.ShowDialog() != true) return;
+        string? fileName = await Dialogs.SaveFileAsync("Export cheat table",
+            (string.IsNullOrWhiteSpace(_table.GameName) ? "cheats" : _table.GameName) + CheatTable.FileExtension,
+            new FileKind("Cheatmaster table", "*.cmt"));
+        if (fileName is null) return;
 
         try
         {
-            _table.Save(dialog.FileName);
-            Notify("Exported to " + Path.GetFileName(dialog.FileName), NoticeKind.Success);
+            _table.Save(fileName);
+            Notify("Exported to " + Path.GetFileName(fileName), NoticeKind.Success);
         }
         catch (Exception ex)
         {
@@ -1381,28 +1414,27 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         }
     }
 
-    private void ImportTable()
+    private async void ImportTable()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Import cheat table",
-            Filter = "Cheat tables (*.cmt;*.CT)|*.cmt;*.CT|Cheatmaster table (*.cmt)|*.cmt"
-                     + "|Cheat Engine table (*.CT)|*.CT|All files (*.*)|*.*"
-        };
-        if (dialog.ShowDialog() != true) return;
+        string? fileName = await Dialogs.OpenFileAsync("Import cheat table",
+            new FileKind("Cheat tables", "*.cmt", "*.CT", "*.ct"),
+            new FileKind("Cheatmaster table", "*.cmt"),
+            new FileKind("Cheat Engine table", "*.CT", "*.ct"),
+            new FileKind("All files", "*"));
+        if (fileName is null) return;
 
-        if (".CT".Equals(System.IO.Path.GetExtension(dialog.FileName), StringComparison.OrdinalIgnoreCase))
+        if (".CT".Equals(System.IO.Path.GetExtension(fileName), StringComparison.OrdinalIgnoreCase))
         {
-            ImportCheatEngineTable(dialog.FileName);
+            ImportCheatEngineTable(fileName);
             return;
         }
 
-        var loaded = CheatTable.Load(dialog.FileName);
+        var loaded = CheatTable.Load(fileName);
         if (loaded is null)
         {
             // A Cheat Engine table saved under another name still reads fine, so it is worth a try
             // before telling someone their file is no good.
-            var fallback = CheatEngineTable.Load(dialog.FileName);
+            var fallback = CheatEngineTable.Load(fileName);
             if (!fallback.Failed)
             {
                 Adopt(fallback);
@@ -1465,6 +1497,41 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         NoticeLevel = kind;
     }
 
+    private async void FixAccess()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            RestartElevated();
+            return;
+        }
+
+        if (!LinuxAccess.CanRelax)
+        {
+            Notify("Linux is set to refuse every memory reader until the next restart (ptrace scope 3). " +
+                   "Set kernel.yama.ptrace_scope to 1 or 0 in /etc/sysctl.d, restart the computer, then use this button again.",
+                NoticeKind.Warning);
+            return;
+        }
+
+        _fixingAccess = true;
+        RestartElevatedCommand.RaiseCanExecuteChanged();
+        try
+        {
+            string problem = await LinuxAccess.RelaxAsync();
+            if (problem.Length == 0)
+                Notify("Memory access allowed until the computer restarts. Attach to the game now.", NoticeKind.Success);
+            else
+                Notify("Memory access was not changed: " + problem, NoticeKind.Warning);
+        }
+        finally
+        {
+            _fixingAccess = false;
+            RestartElevatedCommand.RaiseCanExecuteChanged();
+            Raise(nameof(ShowElevationHint));
+            Raise(nameof(ElevationHintText));
+        }
+    }
+
     private void RestartElevated()
     {
         try
@@ -1472,10 +1539,9 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
             string? path = Environment.ProcessPath;
             if (string.IsNullOrEmpty(path)) return;
 
-
             var info = new ProcessStartInfo(path) { UseShellExecute = true, Verb = "runas" };
             System.Diagnostics.Process.Start(info);
-            Application.Current.Shutdown();
+            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
         catch (Exception ex)
         {

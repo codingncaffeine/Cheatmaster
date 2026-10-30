@@ -1,6 +1,8 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Cheatmaster.App.Services;
 using Cheatmaster.App.ViewModels;
 using Cheatmaster.Core.Memory;
 using Cheatmaster.Core.Scanning;
@@ -9,11 +11,17 @@ namespace Cheatmaster.App.Views;
 
 public partial class MemoryViewWindow : Window
 {
-    private readonly MemoryViewModel _viewModel;
+    private readonly MemoryViewModel? _viewModel;
 
-    public MemoryViewWindow(TargetProcess process, ulong address, string description)
+    public MemoryViewWindow()
     {
         InitializeComponent();
+        WindowChrome.DragBy(this, TitleBar);
+        Closed += (_, _) => _viewModel?.Dispose();
+    }
+
+    public MemoryViewWindow(TargetProcess process, ulong address, string description) : this()
+    {
         _viewModel = new MemoryViewModel(process, address, description);
         DataContext = _viewModel;
     }
@@ -23,30 +31,28 @@ public partial class MemoryViewWindow : Window
 
     /// <summary>
     /// Selecting a byte. Five hundred cells with a click handler each would be five hundred more
-    /// elements than this needs, so the click is caught once on the way through.
+    /// handlers than this needs, so the click is caught once on the way through.
     /// </summary>
-    private void OnCellClicked(object sender, MouseButtonEventArgs e)
+    private void OnCellClicked(object? sender, PointerReleasedEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is MemoryCell cell)
-            _viewModel.Select(cell);
+        if ((e.Source as StyledElement)?.DataContext is MemoryCell cell)
+            _viewModel?.Select(cell);
     }
 
-    private void OnAddressKeyDown(object sender, KeyEventArgs e)
+    private void OnAddressKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter) return;
-        _viewModel.GoTo(AddressBox.Text);
+        if (e.Key != Key.Enter || _viewModel is null) return;
+        _viewModel.GoTo(AddressBox.Text ?? string.Empty);
         e.Handled = true;
     }
 
-    private void OnAddField(object sender, RoutedEventArgs e)
+    private void OnAddField(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Button)?.Tag is not MemoryField field) return;
+        if ((sender as Button)?.Tag is not MemoryField field || _viewModel is null) return;
 
         AddRequested?.Invoke(_viewModel.SelectedAddress, field.Type,
             $"{_viewModel.Description} +{_viewModel.SelectedOffset:X} ({field.Label})");
     }
 
-    private void OnClose(object sender, RoutedEventArgs e) => Close();
-
-    private void OnClosed(object? sender, EventArgs e) => _viewModel.Dispose();
+    private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

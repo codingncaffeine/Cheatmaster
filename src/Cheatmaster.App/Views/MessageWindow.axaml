@@ -1,0 +1,37 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Cheatmaster.App.Views.MessageWindow"
+        Title="Cheatmaster"
+        Icon="/Assets/logo.png"
+        SizeToContent="Height" Width="460"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        WindowDecorations="None"
+        ShowInTaskbar="False">
+
+    <Border BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1">
+        <StackPanel>
+            <Grid Name="TitleBar" Background="{StaticResource SurfaceBrush}" Height="34">
+                <TextBlock Name="TitleLabel" Text="Cheatmaster" Margin="14,0,0,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="12" />
+                <Button Classes="caption close" HorizontalAlignment="Right" Click="OnNo" ToolTip.Tip="Close">
+                    <Path Classes="glyph" Data="{StaticResource IconClose}" />
+                </Button>
+            </Grid>
+
+            <ScrollViewer MaxHeight="420" Margin="20,18,20,0">
+                <SelectableTextBlock Name="MessageLabel" TextWrapping="Wrap" FontSize="12.5"
+                                     Foreground="{StaticResource TextMutedBrush}" />
+            </ScrollViewer>
+
+            <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="16,12" Margin="0,18,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button Name="NoButton" Content="Cancel" Click="OnNo" MinWidth="90" IsCancel="True" />
+                    <Button Name="YesButton" Content="Yes" Click="OnYes" MinWidth="110"
+                            Classes="primary" IsDefault="True" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Border>
+</Window>

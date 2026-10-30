@@ -210,12 +210,13 @@ public sealed class CloudSyncViewModel : ObservableObject
 
     private void OpenVerification() => Launch(_prompt?.VerificationUri ?? "https://github.com/login/device");
 
-    private void CopyCode()
+    private async void CopyCode()
     {
         try
         {
-            System.Windows.Clipboard.SetText(UserCode);
-            Status = "Code copied. Paste it on GitHub.";
+            Status = await Services.Dialogs.CopyTextAsync(UserCode)
+                ? "Code copied. Paste it on GitHub."
+                : "Could not copy the code. Type it on GitHub instead.";
         }
         catch (Exception ex)
         {

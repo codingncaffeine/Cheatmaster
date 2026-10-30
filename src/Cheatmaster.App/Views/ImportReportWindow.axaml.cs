@@ -1,18 +1,21 @@
-using System.Windows;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Cheatmaster.App.Services;
 using Cheatmaster.Core.Cheats;
 
 namespace Cheatmaster.App.Views;
 
 public partial class ImportReportWindow : Window
 {
-    public ImportReportWindow(ImportReport report)
+    public ImportReportWindow()
     {
         InitializeComponent();
-        DataContext = report;
+        WindowChrome.DragBy(this, TitleBar);
     }
 
-    public static void Show(Window owner, ImportReport report) =>
-        new ImportReportWindow(report) { Owner = owner }.ShowDialog();
+    public ImportReportWindow(ImportReport report) : this() => DataContext = report;
 
-    private void OnClose(object sender, RoutedEventArgs e) => Close();
+    public static Task Show(Window owner, ImportReport report) => new ImportReportWindow(report).ShowDialog(owner);
+
+    private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text;
-using System.Windows.Threading;
+using Avalonia.Threading;
 using Cheatmaster.App.Infrastructure;
 using Cheatmaster.Core.Debugging;
 using Cheatmaster.Core.Memory;

@@ -1,26 +1,14 @@
 using System.Globalization;
-using System.Windows;
-using System.Windows.Data;
+using Avalonia.Data.Converters;
 
 namespace Cheatmaster.App.Infrastructure;
 
-public sealed class BoolToVisibility : IValueConverter
+/// <summary>True when there is something to show: text that is not blank, a count above zero, a non-empty list.</summary>
+public sealed class NotEmpty : IValueConverter
 {
-    public bool Invert { get; set; }
+    public static readonly NotEmpty Instance = new();
+    public static readonly NotEmpty Inverted = new() { Invert = true };
 
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        bool flag = value is bool b && b;
-        if (Invert) flag = !flag;
-        return flag ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is Visibility v && v == Visibility.Visible;
-}
-
-public sealed class NotEmptyToVisibility : IValueConverter
-{
     public bool Invert { get; set; }
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -34,8 +22,7 @@ public sealed class NotEmptyToVisibility : IValueConverter
             System.Collections.ICollection c => c.Count > 0,
             _ => true
         };
-        if (Invert) has = !has;
-        return has ? Visibility.Visible : Visibility.Collapsed;
+        return Invert ? !has : has;
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
@@ -44,6 +31,8 @@ public sealed class NotEmptyToVisibility : IValueConverter
 
 public sealed class InverseBool : IValueConverter
 {
+    public static readonly InverseBool Instance = new();
+
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is not bool b || !b;
 
@@ -54,6 +43,8 @@ public sealed class InverseBool : IValueConverter
 /// <summary>Formats a byte count for the status bar.</summary>
 public sealed class ByteSize : IValueConverter
 {
+    public static readonly ByteSize Instance = new();
+
     public static string Format(double bytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
@@ -76,8 +67,23 @@ public sealed class ByteSize : IValueConverter
 /// <summary>Renders a count with thousands separators, so a million results reads as one.</summary>
 public sealed class CountFormat : IValueConverter
 {
+    public static readonly CountFormat Instance = new();
+
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is null ? "0" : System.Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString("N0", CultureInfo.InvariantCulture);
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>True when the bound value equals the parameter: an enum member, a string, a number.</summary>
+public sealed class EqualsConverter : IValueConverter
+{
+    public static readonly EqualsConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        Equals(value, parameter) ||
+        (value is not null && parameter is string text && string.Equals(value.ToString(), text, StringComparison.Ordinal));
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
