@@ -596,18 +596,22 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
 
         // Opening reads the module list, and fingerprinting hashes the executable: both are real
         // work on a large game, and none of it belongs on the UI thread.
-        var (opened, error, game) = await Task.Run(() =>
+        // The saved table and the other-versions lookup are file reads, so they come along too.
+        bool autoLoad = Settings.AutoLoadTables;
+        var (opened, error, game, table, others) = await Task.Run(() =>
         {
             var process = TargetProcess.Open(candidate.Pid, out string why);
-            if (process is null) return (null, why, null);
+            if (process is null) return (null, why, null, null, 0);
             _ = process.Modules;
             var print = string.IsNullOrEmpty(process.ImagePath)
                 ? GameFingerprint.Unknown(process.Name)
                 : GameFingerprint.For(process.ImagePath);
-            return ((TargetProcess?)process, string.Empty, (GameFingerprint?)print);
+            var saved = autoLoad ? _library.LoadOrCreate(print) : CheatTable.ForGame(print);
+            int otherCount = saved.Entries.Count == 0 ? _library.FindOtherVersions(print).Count : 0;
+            return ((TargetProcess?)process, string.Empty, (GameFingerprint?)print, (CheatTable?)saved, otherCount);
         });
 
-        if (opened is null || game is null)
+        if (opened is null || game is null || table is null)
         {
             Status = "Not attached.";
             Notify(error, NoticeKind.Error);
@@ -627,7 +631,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         _game = game;
         GameName = _game.DisplayName;
 
-        LoadTableForGame();
+        LoadTableForGame(table, others);
 
         Raise(nameof(IsAttached));
         RaiseCommands();
@@ -672,12 +676,12 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         RaiseCommands();
     }
 
-    private void LoadTableForGame()
+    private void LoadTableForGame(CheatTable table, int otherVersions)
     {
         Cheats.Clear();
         if (_game is null) return;
 
-        _table = Settings.AutoLoadTables ? _library.LoadOrCreate(_game) : CheatTable.ForGame(_game);
+        _table = table;
         foreach (var entry in _table.Entries)
         {
             // A plain address from an earlier session points wherever the game happens to have put
@@ -708,9 +712,8 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         }
         else
         {
-            var others = _library.FindOtherVersions(_game);
-            if (others.Count > 0)
-                Notify($"No table for this build, but {others.Count} saved for another version of {_game.ExecutableName}. Import it from the table menu.", NoticeKind.Info);
+            if (otherVersions > 0)
+                Notify($"No table for this build, but {otherVersions} saved for another version of {_game.ExecutableName}. Import it from the table menu.", NoticeKind.Info);
         }
     }
 

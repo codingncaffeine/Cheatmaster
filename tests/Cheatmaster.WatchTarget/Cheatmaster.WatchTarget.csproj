@@ -6,5 +6,9 @@
     <IsPackable>false</IsPackable>
     <!-- Nothing references this as a library; the tests start it as a process. -->
     <IsTestProject>false</IsTestProject>
+    <!-- Unoptimised code keeps every temporary in the stack frame: each one is another copy of the
+         number a search finds. A game keeps its working values in registers, and so does this. -->
+    <Optimize>true</Optimize>
+    <TieredCompilation>false</TieredCompilation>
   </PropertyGroup>
 </Project>

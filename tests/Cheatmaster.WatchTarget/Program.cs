@@ -30,7 +30,6 @@ internal static class Program
         // copies of a number for its screens. The tests tell the real one from the copies.
         bool mirror = args.Length == 2 && args[0] == "mirror";
         bool hold = args.Length == 2 && (args[0] == "hold" || mirror);
-        int held = hold ? int.Parse(args[1], CultureInfo.InvariantCulture) : 0;
 
         // Linux only lets a program debug its own children unless the target says otherwise, and
         // the tests deliberately start this one detached (see WatchTargetProcess). Saying so here
@@ -42,7 +41,9 @@ internal static class Program
         byte* block = (byte*)NativeMemory.AlignedAlloc(BlockSize, BlockSize);
         NativeMemory.Clear(block, BlockSize);
 
-        if (hold) Store(block, held);
+        // The number goes straight into the block and lives nowhere else: a local copy would sit in
+        // this frame (or in dead stack below it) and a search would count it as one more place.
+        if (hold) Store(block, int.Parse(args[1], CultureInfo.InvariantCulture));
         Console.WriteLine(((ulong)block).ToString("X", CultureInfo.InvariantCulture));
         Console.WriteLine(FieldOffset.ToString(CultureInfo.InvariantCulture));
         Console.WriteLine(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
@@ -52,15 +53,14 @@ internal static class Program
         int value = 1;
         long seen = 0;
 
-        if (hold) Store(block, held);
+        ScrubStack();
         while (Environment.TickCount64 < deadline)
         {
             if (!hold) Store(block, value++);
             seen += Load(block);
             if (mirror && Environment.TickCount64 % 100 < 4)
             {
-                int real = Load(block);
-                for (int copy = 1; copy <= 3; copy++) *(int*)(block + FieldOffset + copy * 8) = real;
+                for (int copy = 1; copy <= 3; copy++) *(int*)(block + FieldOffset + copy * 8) = *(int*)(block + FieldOffset);
             }
             Thread.Sleep(2);
         }
@@ -69,6 +69,13 @@ internal static class Program
         Console.WriteLine(seen.ToString(CultureInfo.InvariantCulture));
         NativeMemory.AlignedFree(block);
         return 0;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ScrubStack()
+    {
+        Span<byte> dead = stackalloc byte[64 * 1024];
+        dead.Clear();
     }
 
     // Kept out of line so the access really does go through a base pointer held in a register,
