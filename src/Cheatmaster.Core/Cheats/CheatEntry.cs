@@ -26,12 +26,6 @@ public sealed class CheatEntry
 
     public string FreezeValue { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The value last read from the game, kept so a plain address that moved can be found again by
-    /// searching for it, without asking the player what it was.
-    /// </summary>
-    public string LastSeen { get; set; } = string.Empty;
-
     /// <summary>Global hotkey that toggles the freeze, e.g. "Ctrl+F1". Empty for none.</summary>
     public string Hotkey { get; set; } = string.Empty;
 
@@ -106,7 +100,6 @@ public sealed class CheatEntry
         Bias = Bias,
         Frozen = false,
         FreezeValue = FreezeValue,
-        LastSeen = LastSeen,
         Hotkey = string.Empty,
         Group = Group,
         LastVerified = LastVerified,

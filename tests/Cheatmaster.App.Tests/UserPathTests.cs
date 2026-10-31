@@ -252,7 +252,7 @@ public class UserPathTests
         Assert.Equal([target.Field], left);
         // The test's nudged numbers never stick to what is kept.
         var keptRow = vm.Cheats.Single(c => c.Entry.Address.Resolve(vm.Process!) == target.Field);
-        Assert.Equal("987654321", keptRow.Entry.LastSeen);
+        Assert.Equal("987654321", keptRow.Entry.FreezeValue);
         // Put back as it was, and the copies follow it again.
         WaitFor(() => outside.ReadValue<int>(target.Field + 8) == 987654321 ? vm : null, "the copies did not settle back");
         Assert.Equal(987654321, outside.ReadValue<int>(target.Field));
@@ -327,10 +327,20 @@ public class UserPathTests
             AttachTo(vm, restarted);
             Settle(300);
 
-            // Found again by itself, from the value it had last time: nothing is typed.
             var row = vm.Cheats.Single(c => c.Frozen);
-            WaitFor(() => row.NeedsFinding ? null : vm, "it was not found again by itself: " + vm.Verdict + " / " + vm.Notice, seconds: 40);
-            Assert.Empty(window.OwnedWindows.OfType<ValuePromptWindow>());
+            Assert.All(vm.Cheats, c => Assert.True(c.NeedsFinding, "a plain address from the last session was trusted"));
+            Assert.Equal(string.Empty, vm.FreezeStatus);
+
+            // The player presses Find it again on the bare line and types the number on screen.
+            var bare = vm.Cheats.Single(c => !c.Frozen);
+            var bareRowButton = window.GetVisualDescendants().OfType<Button>()
+                .First(b => Equals(b.Content, "Find it again") && ReferenceEquals(b.DataContext, bare));
+            Click(window, bareRowButton);
+            var prompt = WaitFor(() => window.OwnedWindows.OfType<ValuePromptWindow>().FirstOrDefault(), "Find it again asked nothing");
+            prompt.GetVisualDescendants().OfType<TextBox>().First().Text = Value;
+            Click(prompt, Button(prompt, "Apply"));
+
+            WaitFor(() => row.NeedsFinding ? null : vm, "it was not found again: " + vm.Verdict + " / " + vm.Notice, seconds: 40);
             Assert.Equal(restarted.Field, row.Entry.Address.Resolve(vm.Process!));
             Assert.Contains("frozen", vm.FreezeStatus);
             Assert.Single(vm.Cheats); // the stale line saved with it was cleared

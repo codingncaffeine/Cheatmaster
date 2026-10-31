@@ -265,7 +265,6 @@ public sealed class CheatRow : ObservableObject
         string text = Entry.Interpretation.FormatDisplay(bits);
         if (text == _valueText) return;
         _valueText = text;
-        Entry.LastSeen = text;
         Raise(nameof(ValueText));
     }
 
