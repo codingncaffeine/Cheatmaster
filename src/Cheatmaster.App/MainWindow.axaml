@@ -331,8 +331,8 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0" Spacing="12" IsVisible="{Binding HasLikely}">
                                     <Button Content="Find the real one" Classes="primary" Command="{Binding FindRealCommand}"
                                             IsVisible="{Binding CanFindReal}"
-                                            ToolTip.Tip="Gives each address a slightly different number. Open the game screen that shows it, and the address whose number spreads to the others is the real one." />
-                                    <TextBlock Text="Open the game screen that shows this number…" VerticalAlignment="Center"
+                                            ToolTip.Tip="Gives each address a slightly different number. When the game next shows the value, the address whose number spreads to the others is the real one." />
+                                    <TextBlock Text="Let the game show this number…" VerticalAlignment="Center"
                                                Foreground="{StaticResource AccentBrush}" IsVisible="{Binding IsFindingReal}" />
                                     <Button Content="Add and test it" Command="{Binding AddAndTestCommand}" IsVisible="{Binding !IsFindingReal}"
                                             ToolTip.Tip="Add the most likely address and write a new value to it. If the game's number changes, that is the one." />

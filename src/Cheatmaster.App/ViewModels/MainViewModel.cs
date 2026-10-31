@@ -941,7 +941,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         if (Results is { IsByAddress: false })
         {
             Verdict = "That number is everywhere.";
-            VerdictDetail = "A small number appears millions of times in a game's memory. Change it in the game — spend some, pick some up — then type the new number and press Next scan. Each scan rules out the places that did not change with it.";
+            VerdictDetail = "A small number appears millions of times in a game's memory. Make it change in the game — take damage, spend or earn some, use an item, fire a shot — then type the new number and press Next scan. Each scan rules out the places that did not change with it.";
             return;
         }
 
@@ -955,7 +955,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         if (left <= FewEnoughToTry)
         {
             Verdict = $"Nearly there — {left} addresses left.";
-            VerdictDetail = "Games keep copies of a number for their screens, and only one of these is the real one. Press Find the real one, then open and close the game screen that shows the number.";
+            VerdictDetail = "Games keep copies of a number for their screens, and only one of these is the real one. Press Find the real one, then let the game show the number — keep playing if it is always on screen, or open the screen that shows it.";
             return;
         }
 
@@ -1084,7 +1084,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         for (int round = 0; round < 6 && Results is { TotalCount: > FewEnoughToTry }; round++)
         {
             string? next = await prompt($"Find {name} again",
-                $"{Results.TotalCount:N0} places hold that number. Change {name} in the game — spend some or pick some up — then type the new number.",
+                $"{Results.TotalCount:N0} places hold that number. Make {name} change in the game — take damage, spend or earn some, use an item — then type the new number.",
                 string.Empty);
             if (string.IsNullOrWhiteSpace(next)) return false;
             ValueText = next.Trim();
@@ -1195,7 +1195,7 @@ public sealed class MainViewModel : ObservableObject, ICheatHost, IDisposable
         }
 
         IsFindingReal = true;
-        Notify("Now open the game screen that shows this number — inventory, trade, character — then close it again. Cheatmaster is watching for which address the game copies from.", NoticeKind.Info);
+        Notify("Now let the game show this number: if it is always on screen (a health bar, an ammo count) just keep playing for a moment; otherwise open the screen that shows it — inventory, character, status — and close it again. Cheatmaster is watching for which address the game copies from.", NoticeKind.Info);
 
         int real = -1;
         var deadline = DateTime.UtcNow.AddSeconds(45);
