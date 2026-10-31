@@ -119,8 +119,13 @@ elevated restart rather than demanding a UAC prompt every launch.
 ```sh
 ./run.sh                      # build and start
 dotnet test -c Release        # engine and window tests
-packaging/build-release.sh    # every release artifact, into packaging/out
+packaging/build-release.sh    # every release artifact, into packaging/out, then the install test
 ```
+
+The release build ends with `packaging/install-test.sh`, which needs podman: it installs the .deb on
+Debian 12 and 13 and Ubuntu 22.04 and 24.04, and the musl tarball on Alpine 3.22, each in a clean
+container, and fails the build if any of them cannot open the window. `--skip-install-test` leaves it
+out on a machine without podman.
 
 The app is `src/Cheatmaster.App` (Avalonia), the engine is `src/Cheatmaster.Core`, and the
 engine has no UI dependency. On Windows, `dotnet run --project tools/IconForge` regenerates the

@@ -6,8 +6,23 @@
 #   Cheatmaster-<ver>-win-x64-selfcontained.zip   one file, nothing to install
 #   Cheatmaster-<ver>-win-x64.zip             needs the .NET 10 Desktop Runtime
 # The version is <Version> in Directory.Build.props.
+# Then packaging/install-test.sh installs the .deb on Debian and Ubuntu and the musl tarball on
+# Alpine, in containers, and fails the release if any of them cannot open the window (needs podman).
+# --skip-install-test leaves that out, for a machine without podman; never for a published release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+INSTALL_TEST=1
+for arg in "$@"; do
+    case $arg in
+        --skip-install-test) INSTALL_TEST=0 ;;
+        *) echo "usage: $0 [--skip-install-test]" >&2; exit 2 ;;
+    esac
+done
+if (( INSTALL_TEST )) && ! command -v podman >/dev/null; then
+    echo "!! The install test needs podman. Install it, or pass --skip-install-test." >&2
+    exit 2
+fi
 
 VER=$(grep -oPm1 '(?<=<Version>)[^<]+' Directory.Build.props)
 OUT=${CHEATMASTER_OUT:-packaging/out}
@@ -108,6 +123,12 @@ for p in src/Cheatmaster.App src/Cheatmaster.Core; do
         rm -rf "${p:?}/bin/Release/net10.0/$rid" "${p:?}/obj/Release/net10.0/$rid"
     done
 done
+
+if (( INSTALL_TEST )); then
+    CHEATMASTER_OUT=$OUT packaging/install-test.sh
+else
+    echo "!! Install test skipped: these artifacts were not tried on Debian, Ubuntu or Alpine." >&2
+fi
 
 echo "── artifacts:"
 ls -sh1 "$OUT" | grep -v publish
